@@ -1,5 +1,5 @@
-import csv
 import os
+import openpyxl
 import psycopg
 
 url = os.environ["DATABASE_URL"]
@@ -7,13 +7,19 @@ url = os.environ["DATABASE_URL"]
 def clean(value):
     return value.strip() or None # for blank values 
 
+def read_rows(path):
+    """Read the spreadsheet and give back (row number, row as a dictionary)."""
+    sheet = openpyxl.load_workbook(path, read_only=True, data_only=True).active
+    rows = sheet.iter_rows(values_only=True)
+    headers = next(rows)  # first row = column names
+    for line_number, values in enumerate(rows, start=2):
+        row = {h: ("" if v is None else str(v)) for h, v in zip(headers, values) if h}
+        if not any(value.strip() for value in row.values()):
+            continue  # completely empty row, nothing to report
+        yield line_number, row
+
 with psycopg.connect(url) as conn:
-    with open(
-        "Data/AesireTemplateRecord.csv",
-        newline="",
-        encoding="utf-8-sig",
-    ) as f:
-        for row in csv.DictReader(f):
+    for line_number, row in read_rows("Data/AesireTemplateRecord.xlsx"):
             email = row["email"].strip().lower()
 
             if not email:
