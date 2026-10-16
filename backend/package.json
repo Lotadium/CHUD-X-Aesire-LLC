@@ -1,0 +1,27 @@
+{
+  "name": "chud-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "REST API for the Client Tracking Information app (Neon Function + Postgres)",
+  "scripts": {
+    "dev": "neon dev",
+    "deploy": "neon deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@neon/config": "^1.9.2",
+    "@neon/functions": "^0.11.0",
+    "hono": "^4.13.13",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.15.0",
+    "typescript": "^5.9.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
