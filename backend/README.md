@@ -16,6 +16,10 @@ neon link          # pick the "Client Tracking Information" project; writes .env
 npm run dev        # neon dev: serves the API on http://localhost:8787
 ```
 
+**Without the Neon CLI:** copy the connection string from the Neon console (project → **Connect**,
+choose the branch), put it in `backend/.env` as `DATABASE_URL=...`, and run `npm run local`.
+It serves the same API on http://localhost:8787 (set `PORT` to change it).
+
 `DATABASE_URL` comes from Neon and lives in `.env`, which is git-ignored. **Never commit it.**
 Set `CORS_ORIGIN` (comma-separated origins) to restrict which front-end origins may call the API;
 it defaults to any origin for development.

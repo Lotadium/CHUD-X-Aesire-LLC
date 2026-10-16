@@ -6,11 +6,13 @@
   "description": "REST API for the Client Tracking Information app (Neon Function + Postgres)",
   "scripts": {
     "dev": "neon dev",
+    "local": "node --env-file=.env functions/local.ts",
     "deploy": "neon deploy",
     "typecheck": "tsc --noEmit",
     "test": "node --test \"test/**/*.test.ts\""
   },
   "dependencies": {
+    "@hono/node-server": "^2.1.5",
     "@neon/config": "^1.9.2",
     "@neon/functions": "^0.11.0",
     "hono": "^4.13.13",
