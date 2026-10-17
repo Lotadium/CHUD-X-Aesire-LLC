@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchRecords } from "../api";
-import type { Organization, Person } from "./mock/records";
+import type { Organization, Person } from "../mock/records";
 
 type Row = {
   key: string; domain: string; entity: string; website: string;
