@@ -1,8 +1,9 @@
+// AI use: written by Claude (Claude Code, Sonnet 5.5) at Irene Riva's direction. See "AI use" in backend/README.md.
 import { Hono, type Context } from "hono";
 import type { Pool } from "pg";
 import type { AppEnv } from "../app.ts";
-import { insertRow, one, updateRow, withTransaction, type Actor, type Queryable } from "../db.ts";
-import { HttpError, type FieldErrors } from "../errors.ts";
+import { insertRow, one, updateRow, withTransaction, type Queryable } from "../db.ts";
+import type { FieldErrors } from "../errors.ts";
 import { notFound, readJson } from "../http.ts";
 import {
   collectFields,
@@ -10,6 +11,7 @@ import {
   parseFields,
   parseId,
   parsePage,
+  parseUpdate,
   type Parsed,
   type Schema,
 } from "../validate.ts";
@@ -157,7 +159,7 @@ export function peopleRoutes(pool: Pool) {
   const updatePerson = async (c: Context<AppEnv>) => {
     const actor = c.get("actor");
     const id = parseId(c.req.param("id"));
-    const fields = parseFields(await readJson(c), PERSON_FIELDS, "update");
+    const fields = parseUpdate(await readJson(c), PERSON_FIELDS);
     const person = await withTransaction(pool, actor, async (db) => {
       const row = await updateRow(db, "person", "person_id", id, fields, actor);
       return row ? getPerson(db, id) : undefined;
@@ -167,18 +169,6 @@ export function peopleRoutes(pool: Pool) {
   };
   routes.put("/people/:id", updatePerson);
   routes.patch("/people/:id", updatePerson);
-
-  // A person owns their positions and emails, so deleting the person removes those too.
-  routes.delete("/people/:id", async (c) => {
-    const id = parseId(c.req.param("id"));
-    await withTransaction(pool, c.get("actor"), async (db) => {
-      await requirePerson(db, id);
-      await db.query("DELETE FROM email WHERE person_id = $1", [id]);
-      await db.query('DELETE FROM "position" WHERE person_id = $1', [id]);
-      await db.query("DELETE FROM person WHERE person_id = $1", [id]);
-    });
-    return c.body(null, 204);
-  });
 
   // ---- positions ----
 
@@ -202,7 +192,7 @@ export function peopleRoutes(pool: Pool) {
   const updatePosition = async (c: Context<AppEnv>) => {
     const actor = c.get("actor");
     const id = parseId(c.req.param("id"));
-    const fields = parseFields(await readJson(c), POSITION_FIELDS, "update");
+    const fields = parseUpdate(await readJson(c), POSITION_FIELDS);
     const position = await withTransaction(pool, actor, async (db) => {
       const row = await updateRow(db, "position", "position_id", id, fields, actor);
       return row ? one(db, `${POSITION_SELECT} WHERE pos.position_id = $1`, [id]) : undefined;
@@ -212,11 +202,6 @@ export function peopleRoutes(pool: Pool) {
   };
   routes.put("/positions/:id", updatePosition);
   routes.patch("/positions/:id", updatePosition);
-
-  routes.delete("/positions/:id", async (c) => {
-    await deleteById(pool, c.get("actor"), '"position"', "position_id", parseId(c.req.param("id")), "Position");
-    return c.body(null, 204);
-  });
 
   // ---- emails ----
 
@@ -234,7 +219,7 @@ export function peopleRoutes(pool: Pool) {
   const updateEmail = async (c: Context<AppEnv>) => {
     const actor = c.get("actor");
     const id = parseId(c.req.param("id"));
-    const fields = withEmailParts(parseFields(await readJson(c), EMAIL_FIELDS, "update"));
+    const fields = withEmailParts(parseUpdate(await readJson(c), EMAIL_FIELDS));
     const email = await withTransaction(pool, actor, (db) =>
       updateRow(db, "email", "email_id", id, fields, actor),
     );
@@ -244,25 +229,5 @@ export function peopleRoutes(pool: Pool) {
   routes.put("/emails/:id", updateEmail);
   routes.patch("/emails/:id", updateEmail);
 
-  routes.delete("/emails/:id", async (c) => {
-    await deleteById(pool, c.get("actor"), "email", "email_id", parseId(c.req.param("id")), "Email");
-    return c.body(null, 204);
-  });
-
   return routes;
-}
-
-async function deleteById(
-  pool: Pool,
-  actor: Actor,
-  table: string,
-  idColumn: string,
-  id: number,
-  label: string,
-): Promise<void> {
-  const deleted = await withTransaction(pool, actor, async (db) => {
-    const { rowCount } = await db.query(`DELETE FROM ${table} WHERE ${idColumn} = $1`, [id]);
-    return rowCount ?? 0;
-  });
-  if (deleted === 0) throw new HttpError(404, `${label} not found`);
 }

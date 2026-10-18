@@ -1,3 +1,4 @@
+// AI use: written by Claude (Claude Code, Sonnet 5.5) at Irene Riva's direction. See "AI use" in backend/README.md.
 export type FieldErrors = Record<string, string>;
 
 /** An error that is safe to show the client: becomes `{ error, fields? }` with `status`. */

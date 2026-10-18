@@ -67,6 +67,27 @@ npm run typecheck
   `{ "data": [...], "total": 123, "limit": 50, "offset": 0 }`.
 - Emails are lowercased and trimmed; `email_domain` and `email_tld` are filled in automatically.
 
+## Records are never deleted
+
+The client does not want records deleted. **There are no DELETE endpoints** (a DELETE request returns 404).
+A record that is no longer valid is **flagged** instead and keeps all of its history:
+
+```bash
+# flag an organization (a reason is required)
+curl -X PUT http://localhost:8787/api/organizations/1 -H "Content-Type: application/json" -H "X-User: irene" \
+  -d '{ "is_flagged": true, "flag_reason": "District dissolved" }'
+
+# clear the flag (the reason is cleared too)
+curl -X PUT http://localhost:8787/api/organizations/1 -H "Content-Type: application/json" -H "X-User: irene" \
+  -d '{ "is_flagged": false }'
+```
+
+- Works the same on people, positions and emails.
+- `flag_reason` is required when `is_flagged` is `true`, and can only be sent together with `is_flagged`.
+- Every response includes `is_flagged` and `flag_reason`, so forms and lists can show flagged records.
+- These need the `is_flagged` (boolean, default false) and `flag_reason` (up to 500 characters) columns on
+  `organization`, `person`, `position` and `email` in the schema (owned by CHUD-10).
+
 ## Endpoints
 
 ### Health and lookups
@@ -86,8 +107,7 @@ npm run typecheck
 | GET | `/api/organizations` | Optional `?domain_id=`. Each row includes `domain_name` |
 | POST | `/api/organizations` | `{ domain_id, name, website_url? }` |
 | GET | `/api/organizations/:id` | Includes `contacts`: the people who work there |
-| PUT/PATCH | `/api/organizations/:id` | Any of `domain_id`, `name`, `website_url` |
-| DELETE | `/api/organizations/:id` | 409 if it still has contacts; `?force=true` deletes those positions too (the people are kept) |
+| PUT/PATCH | `/api/organizations/:id` | Any of `domain_id`, `name`, `website_url`, `is_flagged`, `flag_reason` |
 
 ### Contacts (people)
 
@@ -96,14 +116,11 @@ npm run typecheck
 | GET | `/api/people` | Optional `?organization_id=`. Each person includes `positions` and `emails` |
 | POST | `/api/people` | Person fields, plus optional `positions: [...]` and `emails: [...]`, saved all-or-nothing |
 | GET | `/api/people/:id` | |
-| PUT/PATCH | `/api/people/:id` | Person fields only |
-| DELETE | `/api/people/:id` | Also deletes their positions and emails |
+| PUT/PATCH | `/api/people/:id` | Person fields, `is_flagged`, `flag_reason` |
 | POST | `/api/people/:id/positions` | `{ organization_id, department_id?, title?, additional_title?, phone?, phone_ext?, mobile_phone?, fax? }` |
-| PUT/PATCH | `/api/positions/:id` | |
-| DELETE | `/api/positions/:id` | |
+| PUT/PATCH | `/api/positions/:id` | Position fields, `is_flagged`, `flag_reason` |
 | POST | `/api/people/:id/emails` | `{ address }` |
-| PUT/PATCH | `/api/emails/:id` | `{ address }` |
-| DELETE | `/api/emails/:id` | |
+| PUT/PATCH | `/api/emails/:id` | `{ address }`, or `is_flagged`, `flag_reason` |
 
 Person fields: `prefix`, `first_name` (required), `middle_name`, `last_name` (required), `suffix`,
 `linkedin_url`.
@@ -133,3 +150,15 @@ backend/
   src/errors.ts        turns database errors into clean 400/404/409 responses
   test/api.test.ts     integration tests
 ```
+
+## AI use
+
+- **AI used:** Yes.
+- **Tool and model:** Claude, through Claude Code (model: Claude Sonnet 5.5).
+- **What it did:** Claude wrote the code in `backend/` (routes, validation, error handling, database helpers), the
+  integration tests, and this README, working from Irene's requests, Ryan's schema (`DataBase/database_schema.sql`),
+  and Neon's documentation. It also made the later change from deleting records to flagging them.
+- **What Irene did:** directed the work, ran the API against a Neon dev branch, and checked the results by hand.
+- **Peer review:** pending, in the pull request.
+
+The same note is at the top of each source file.

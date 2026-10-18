@@ -1,10 +1,10 @@
+// AI use: written by Claude (Claude Code, Sonnet 5.5) at Irene Riva's direction. See "AI use" in backend/README.md.
 import { Hono, type Context } from "hono";
 import type { Pool } from "pg";
 import type { AppEnv } from "../app.ts";
 import { insertRow, one, updateRow, withTransaction, type Queryable } from "../db.ts";
-import { HttpError } from "../errors.ts";
 import { notFound, readJson } from "../http.ts";
-import { parseFields, parseId, parsePage, type Schema } from "../validate.ts";
+import { parseFields, parseId, parsePage, parseUpdate, type Schema } from "../validate.ts";
 
 const ORGANIZATION_FIELDS: Schema = {
   domain_id: { type: "int", required: true },
@@ -78,7 +78,7 @@ export function organizationRoutes(pool: Pool) {
   const update = async (c: Context<AppEnv>) => {
     const actor = c.get("actor");
     const id = parseId(c.req.param("id"));
-    const fields = parseFields(await readJson(c), ORGANIZATION_FIELDS, "update");
+    const fields = parseUpdate(await readJson(c), ORGANIZATION_FIELDS);
     const organization = await withTransaction(pool, actor, async (db) => {
       const row = await updateRow(db, "organization", "organization_id", id, fields, actor);
       return row ? getOrganization(db, id) : undefined;
@@ -88,33 +88,6 @@ export function organizationRoutes(pool: Pool) {
   };
   routes.put("/organizations/:id", update);
   routes.patch("/organizations/:id", update);
-
-  // Deleting an organization that still has contacts needs ?force=true, which also
-  // removes those contact positions (the people themselves are kept).
-  routes.delete("/organizations/:id", async (c) => {
-    const id = parseId(c.req.param("id"));
-    const force = c.req.query("force") === "true";
-
-    await withTransaction(pool, c.get("actor"), async (db) => {
-      if (!(await one(db, "SELECT 1 FROM organization WHERE organization_id = $1 FOR UPDATE", [id]))) {
-        throw notFound("Organization");
-      }
-      const { rows } = await db.query(
-        'SELECT count(*)::int AS n FROM "position" WHERE organization_id = $1',
-        [id],
-      );
-      const positions: number = rows[0].n;
-      if (positions > 0 && !force) {
-        throw new HttpError(
-          409,
-          `Organization still has ${positions} contact position(s). Remove them first, or retry with ?force=true to delete them too`,
-        );
-      }
-      if (positions > 0) await db.query('DELETE FROM "position" WHERE organization_id = $1', [id]);
-      await db.query("DELETE FROM organization WHERE organization_id = $1", [id]);
-    });
-    return c.body(null, 204);
-  });
 
   return routes;
 }

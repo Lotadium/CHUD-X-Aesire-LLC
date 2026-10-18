@@ -1,3 +1,4 @@
+// AI use: written by Claude (Claude Code, Sonnet 5.5) at Irene Riva's direction. See "AI use" in backend/README.md.
 import type { Pool, PoolClient, QueryResultRow } from "pg";
 import type { Parsed } from "./validate.ts";
 

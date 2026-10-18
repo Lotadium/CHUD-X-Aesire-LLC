@@ -1,3 +1,4 @@
+// AI use: written by Claude (Claude Code, Sonnet 5.5) at Irene Riva's direction. See "AI use" in backend/README.md.
 // Runs the same API as functions/api.ts on a plain Node server, without the Neon CLI.
 //   npm run local     (reads DATABASE_URL from backend/.env)
 import { serve } from "@hono/node-server";

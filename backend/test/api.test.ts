@@ -1,3 +1,4 @@
+// AI use: written by Claude (Claude Code, Sonnet 5.5) at Irene Riva's direction. See "AI use" in backend/README.md.
 // Integration tests: they run the real API against a THROWAWAY Postgres database
 // that is loaded with DataBase/database_schema.sql.
 //
@@ -40,6 +41,15 @@ describe("CHUD API", { skip }, () => {
   before(async () => {
     await pool.query("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
     await pool.query(readFileSync(new URL("../../DataBase/database_schema.sql", import.meta.url), "utf8"));
+    // Records are flagged instead of deleted. These columns are owned by the schema (CHUD-10);
+    // adding them here with IF NOT EXISTS keeps the tests passing before and after that change.
+    for (const table of ["organization", "person", '"position"', "email"]) {
+      await pool.query(
+        `ALTER TABLE ${table}
+           ADD COLUMN IF NOT EXISTS is_flagged boolean NOT NULL DEFAULT false,
+           ADD COLUMN IF NOT EXISTS flag_reason varchar(500)`,
+      );
+    }
     const res = await call("POST", "/api/domains", { name: "Water" });
     domainId = res.body.domain_id;
   });
@@ -139,14 +149,41 @@ describe("CHUD API", { skip }, () => {
       assert.equal((await call("GET", "/api/organizations/abc")).status, 400);
       assert.equal((await call("GET", "/api/organizations/99999")).status, 404);
       assert.equal((await call("PUT", "/api/organizations/99999", { name: "x" })).status, 404);
-      assert.equal((await call("DELETE", "/api/organizations/99999")).status, 404);
     });
 
-    it("deletes an organization with no contacts", async () => {
-      const created = await call("POST", "/api/organizations", { domain_id: domainId, name: "Temp" });
-      const id = created.body.organization_id;
-      assert.equal((await call("DELETE", `/api/organizations/${id}`)).status, 204);
-      assert.equal((await call("GET", `/api/organizations/${id}`)).status, 404);
+    it("has no delete endpoint: records are kept", async () => {
+      const res = await call("DELETE", `/api/organizations/${orgId}`);
+      assert.equal(res.status, 404);
+      assert.equal((await call("GET", `/api/organizations/${orgId}`)).status, 200);
+    });
+
+    it("flags an organization as no longer valid, keeping the record", async () => {
+      const flagged = await call("PUT", `/api/organizations/${orgId}`, {
+        is_flagged: true,
+        flag_reason: "  District dissolved ",
+      });
+      assert.equal(flagged.status, 200);
+      assert.equal(flagged.body.is_flagged, true);
+      assert.equal(flagged.body.flag_reason, "District dissolved");
+      assert.equal(flagged.body.name, "Folsom Water District");
+
+      const cleared = await call("PUT", `/api/organizations/${orgId}`, { is_flagged: false, flag_reason: "ignored" });
+      assert.equal(cleared.body.is_flagged, false);
+      assert.equal(cleared.body.flag_reason, null);
+    });
+
+    it("requires a reason when flagging and rejects a reason without a flag", async () => {
+      const noReason = await call("PUT", `/api/organizations/${orgId}`, { is_flagged: true });
+      assert.equal(noReason.status, 400);
+      assert.equal(noReason.body.fields.flag_reason, "is required when flagging a record");
+
+      const lone = await call("PUT", `/api/organizations/${orgId}`, { flag_reason: "why" });
+      assert.equal(lone.status, 400);
+      assert.match(lone.body.fields.flag_reason, /together with is_flagged/);
+
+      const badFlag = await call("PUT", `/api/organizations/${orgId}`, { is_flagged: "yes" });
+      assert.equal(badFlag.status, 400);
+      assert.equal(badFlag.body.fields.is_flagged, "must be true or false");
     });
   });
 
@@ -155,6 +192,8 @@ describe("CHUD API", { skip }, () => {
     let personId: number;
     let positionId: number;
     let emailId: number;
+    let secondPositionId: number;
+    let secondEmailId: number;
 
     before(async () => {
       orgId = (await call("GET", "/api/organizations?domain_id=" + domainId)).body.data[0].organization_id;
@@ -247,51 +286,77 @@ describe("CHUD API", { skip }, () => {
       assert.equal(email.body.email_tld, "org");
     });
 
-    it("adds and removes a second position and email", async () => {
+    it("adds a second position and email", async () => {
       const email = await call("POST", `/api/people/${personId}/emails`, { address: "second@example.org" });
       assert.equal(email.status, 201);
-      assert.equal((await call("DELETE", `/api/emails/${email.body.email_id}`)).status, 204);
-      assert.equal((await call("DELETE", `/api/emails/${email.body.email_id}`)).status, 404);
-
       const position = await call("POST", `/api/people/${personId}/positions`, {
         organization_id: orgId,
         title: "Board Member",
       });
       assert.equal(position.status, 201);
       assert.equal(position.body.organization_name, "Folsom Water District");
-      assert.equal((await call("DELETE", `/api/positions/${position.body.position_id}`)).status, 204);
       assert.equal((await call("POST", "/api/people/99999/emails", { address: "a@b.co" })).status, 404);
+      secondPositionId = position.body.position_id;
+      secondEmailId = email.body.email_id;
     });
 
-    it("blocks deleting an organization that still has contacts unless forced", async () => {
-      const blocked = await call("DELETE", `/api/organizations/${orgId}`);
-      assert.equal(blocked.status, 409);
-      assert.match(blocked.body.error, /force=true/);
-
-      assert.equal((await call("DELETE", `/api/organizations/${orgId}?force=true`)).status, 204);
+    it("has no delete endpoints: nothing can be removed through the API", async () => {
+      for (const path of [
+        `/api/people/${personId}`,
+        `/api/positions/${secondPositionId}`,
+        `/api/emails/${secondEmailId}`,
+      ]) {
+        assert.equal((await call("DELETE", path)).status, 404, path);
+      }
       const person = await call("GET", `/api/people/${personId}`);
-      assert.equal(person.status, 200, "the person is kept");
-      assert.deepEqual(person.body.positions, []);
+      assert.equal(person.status, 200);
+      assert.equal(person.body.positions.length, 2);
+      assert.equal(person.body.emails.length, 2);
     });
 
-    it("deletes a person together with their emails and positions", async () => {
-      assert.equal((await call("DELETE", `/api/people/${personId}`, undefined, "deleter")).status, 204);
-      assert.equal((await call("GET", `/api/people/${personId}`)).status, 404);
-      const leftovers = await pool.query("SELECT count(*)::int AS n FROM email WHERE person_id = $1", [personId]);
-      assert.equal(leftovers.rows[0].n, 0);
+    it("flags a person, a position and an email instead of deleting them", async () => {
+      const person = await call("PUT", `/api/people/${personId}`, { is_flagged: true, flag_reason: "Left the agency" });
+      assert.equal(person.body.is_flagged, true);
+      assert.equal(person.body.flag_reason, "Left the agency");
+
+      const position = await call("PUT", `/api/positions/${secondPositionId}`, {
+        is_flagged: true,
+        flag_reason: "No longer on the board",
+      });
+      assert.equal(position.body.is_flagged, true);
+
+      const email = await call("PUT", `/api/emails/${secondEmailId}`, { is_flagged: true, flag_reason: "Bounced" });
+      assert.equal(email.body.is_flagged, true);
+
+      const read = await call("GET", `/api/people/${personId}`);
+      assert.equal(read.body.is_flagged, true, "the person is still returned, with the flag");
+      assert.equal(
+        read.body.positions.find((p: { position_id: number }) => p.position_id === secondPositionId).flag_reason,
+        "No longer on the board",
+      );
     });
 
-    it("keeps a history of changes, including who deleted a record", async () => {
+    it("keeps organizations that still have contacts", async () => {
+      assert.equal((await call("DELETE", `/api/organizations/${orgId}`)).status, 404);
+      const res = await call("GET", `/api/organizations/${orgId}`);
+      assert.equal(res.status, 200);
+      assert.equal(res.body.contacts.length, 2);
+    });
+
+    it("keeps a history of changes, including who flagged a record", async () => {
+      await call("PUT", `/api/people/${personId}`, { is_flagged: false }, "reviewer");
       const { rows } = await pool.query(
-        `SELECT operation, version, changed_by FROM record_history
-         WHERE table_name = 'person' AND row_id = $1 ORDER BY history_id`,
+        `SELECT operation, version, changed_by, row_data->>'is_flagged' AS flagged
+         FROM record_history WHERE table_name = 'person' AND row_id = $1 ORDER BY history_id`,
         [personId],
       );
       assert.deepEqual(
         rows.map((r) => r.operation),
-        ["INSERT", "UPDATE", "DELETE"],
+        ["INSERT", "UPDATE", "UPDATE", "UPDATE"],
       );
-      assert.equal(rows[2].changed_by, "deleter");
+      assert.deepEqual(rows.map((r) => r.flagged), ["false", "false", "true", "false"]);
+      assert.equal(rows[2].changed_by, "tester");
+      assert.equal(rows[3].changed_by, "reviewer");
     });
   });
 });

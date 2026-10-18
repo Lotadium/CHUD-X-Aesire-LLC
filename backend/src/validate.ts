@@ -1,3 +1,4 @@
+// AI use: written by Claude (Claude Code, Sonnet 5.5) at Irene Riva's direction. See "AI use" in backend/README.md.
 import { HttpError, type FieldErrors } from "./errors.ts";
 
 export type Rule =
@@ -121,4 +122,34 @@ export function parsePage(query: (name: string) => string | undefined): Page {
     throw new HttpError(400, "offset must be a whole number of 0 or more");
   }
   return { limit, offset };
+}
+
+/**
+ * Records are never deleted. A record that is no longer valid is flagged instead
+ * (and keeps its history). Flags can only be changed on update.
+ */
+export const FLAG_FIELDS: Schema = {
+  is_flagged: { type: "bool", required: true },
+  flag_reason: { type: "string", max: 500 },
+};
+
+/** Validate an update body: the table's own fields plus the flag fields. */
+export function parseUpdate(body: unknown, schema: Schema): Parsed {
+  const fields = parseFields(body, { ...schema, ...FLAG_FIELDS }, "update");
+
+  const flagging = "is_flagged" in fields;
+  if ("flag_reason" in fields && !flagging) {
+    throw new HttpError(400, "Validation failed", {
+      flag_reason: "can only be changed together with is_flagged",
+    });
+  }
+  if (flagging) {
+    if (fields.is_flagged === true && !fields.flag_reason) {
+      throw new HttpError(400, "Validation failed", {
+        flag_reason: "is required when flagging a record",
+      });
+    }
+    if (fields.is_flagged === false) fields.flag_reason = null;
+  }
+  return fields;
 }
