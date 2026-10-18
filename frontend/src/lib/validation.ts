@@ -1,3 +1,6 @@
+// Written with help from Claude Opus 5.5 (AI assistant). Reviewed and tested by Kathleen Collier.
+// See frontend/README.md → "AI assistance".
+
 import { z } from "zod"; //A Zod schema is a declarative way to describe what valid data should look like. Zod then uses this schema to validate incoming data and infer TypeScript types automatically, giving you type safety at compile time and reliable validation at runtime
 
 // WEBSITE: true if the text is a real http/https web address

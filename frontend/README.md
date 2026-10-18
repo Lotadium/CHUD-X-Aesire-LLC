@@ -44,3 +44,16 @@ frontend/src/
     fakeApi.ts                 in-memory sample data
     realApi.ts                 calls the backend; converts field names, ids, URLs
 ```
+
+## AI assistance
+
+I (Kathleen Collier) used Claude Opus 5.5 (medium effort) as a learning and coding assistant on CHUD-15:
+
+- **Zod validation:** Zod was new to me. Claude explained how schemas, `.refine()`, and
+  regex checks work, and reviewed my validation code and tests while I wrote them.
+- **Front-end styling:** Claude helped restyle the forms to match the Figma mockups
+  approved by Aesire LLC.
+- **Code and tests:** Claude generated parts of the forms, the delete confirmation dialog,
+  the API client, and tests. I reviewed, ran, and tested all of it before committing.
+
+Requirements, field decisions, team coordination, and final testing were done by me.

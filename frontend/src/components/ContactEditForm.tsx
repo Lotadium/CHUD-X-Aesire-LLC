@@ -1,3 +1,6 @@
+// Written with help from Claude Opus 5.5 (AI assistant). Reviewed and tested by Kathleen Collier.
+// See frontend/README.md → "AI assistance".
+
 import { useEffect, useState } from "react";
 import { getContact, updateContact, deleteContact, listOrganizations } from "../lib/api";
 import { contactSchema } from "../lib/validation";
