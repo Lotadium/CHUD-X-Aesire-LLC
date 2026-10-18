@@ -3,6 +3,8 @@ import os
 import openpyxl
 import psycopg
 
+# AI note: written with help from Claude (Anthropic). See README, "AI use".
+
 url = os.environ["DATABASE_URL"]
 
 
