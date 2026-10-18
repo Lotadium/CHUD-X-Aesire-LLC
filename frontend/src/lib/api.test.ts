@@ -1,5 +1,6 @@
 import { test, expect } from "vitest";
-import { getOrganization, updateOrganization, deleteOrganization, listOrganizations, getContact, updateContact, deleteContact } from "./api";
+import * as api from "./api";
+import { getOrganization, updateOrganization, setOrganizationFlag, listOrganizations, getContact, updateContact, setContactFlag } from "./api";
 
 // ---------- Organizations ----------
 
@@ -19,9 +20,13 @@ test("lists organizations for the dropdown", async () => {
   expect(list.length).toBeGreaterThan(0);
 });
 
-test("deletes an organization", async () => {
-  await deleteOrganization("2");
-  await expect(getOrganization("2")).rejects.toThrow("not found");
+test("flags an organization without removing it, and can unflag it", async () => {
+  await setOrganizationFlag("2", true, "District merged");
+  const flagged = await getOrganization("2"); // still there
+  expect(flagged.flagged).toBe(true);
+  expect(flagged.flagReason).toBe("District merged");
+  await setOrganizationFlag("2", false);
+  expect((await getOrganization("2")).flagged).toBe(false);
 });
 
 // ---------- Contacts ----------
@@ -37,7 +42,15 @@ test("updates a contact", async () => {
   expect(contact.title).toBe("Clerk of the Board");
 });
 
-test("deletes a contact", async () => {
-  await deleteContact("2");
-  await expect(getContact("2")).rejects.toThrow("not found");
+test("flags a contact without removing it", async () => {
+  await setContactFlag("2", true, "Retired");
+  const contact = await getContact("2"); // still there
+  expect(contact.flagged).toBe(true);
+  expect(contact.flagReason).toBe("Retired");
+});
+
+// Charter 2.3(f)(iv): "Do not include an option to remove records."
+test("the API offers no way to delete records", () => {
+  const names = Object.keys(api).join(" ");
+  expect(names).not.toMatch(/delete|remove/i);
 });

@@ -2,14 +2,17 @@
 // See frontend/README.md → "AI assistance".
 
 import { useEffect, useState } from "react";
-import { getOrganization, updateOrganization, deleteOrganization, listDomains } from "../lib/api";
+import { getOrganization, updateOrganization, setOrganizationFlag, listDomains } from "../lib/api";
 import { organizationSchema } from "../lib/validation";
 import ConfirmDialog from "./ConfirmDialog";
 import FormField, { SelectField } from "./FormField";
-import { Button, Card, ErrorBanner, PageHeader, SavedPill, TrashIcon } from "./ui";
+import FlagReasonField from "./FlagReasonField";
+import { Button, Card, ErrorBanner, FlagIcon, FlaggedBanner, PageHeader, SavedPill } from "./ui";
 
 // Edit form for an entity (an "organization" in the database).
 // The screen copy says "entity" to match the Figma mockups.
+// There is no delete: per the project charter (2.3 f.iv), a record that is no longer
+// valid is FLAGGED instead, and stays in the database with its history.
 
 // What the form holds while the user types (every input is text)
 type FormValues = { name: string; domainId: string; websiteUrl: string };
@@ -31,7 +34,7 @@ const header = (
   <PageHeader
     crumbs={["Records", "Edit entity"]}
     title="Edit Entity"
-    subtitle="Update the entity's details and save, or delete it from the database."
+    subtitle="Update the entity's details and save, or flag it if it's no longer valid."
   />
 );
 
@@ -43,9 +46,10 @@ export default function OrganizationEditForm({ id }: { id: string }) {
   const [saving, setSaving] = useState(false); // true while the save request is running
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false); // is the "are you sure?" dialog showing?
-  const [deleting, setDeleting] = useState(false);
-  const [deleted, setDeleted] = useState(false);
-  const [savedName, setSavedName] = useState(""); // name as last loaded/saved, shown in the delete dialog
+  const [flag, setFlag] = useState({ flagged: false, flagReason: "" }); // charter: flag, never delete
+  const [flagReason, setFlagReason] = useState(""); // what the user types in the dialog
+  const [flagging, setFlagging] = useState(false);
+  const [savedName, setSavedName] = useState(""); // name as last loaded/saved, shown in the flag dialog
 
   // Runs once when the form appears (and again if the id changes):
   // load the entity AND the domain list at the same time
@@ -53,6 +57,7 @@ export default function OrganizationEditForm({ id }: { id: string }) {
     Promise.all([getOrganization(id), listDomains()])
       .then(([org, domainList]) => {
         setValues({ name: org.name, domainId: org.domainId, websiteUrl: org.websiteUrl });
+        setFlag({ flagged: org.flagged, flagReason: org.flagReason });
         setSavedName(org.name);
         setDomains(domainList);
       })
@@ -104,30 +109,24 @@ export default function OrganizationEditForm({ id }: { id: string }) {
     }
   }
 
-  // Only runs after the user clicks Delete inside the confirmation dialog
-  async function handleDelete() {
-    setDeleting(true);
+  // Flag or unflag the record. Flagging only runs after the user confirms in the dialog.
+  async function changeFlag(flagged: boolean) {
+    setFlagging(true);
+    setMessage(null);
     try {
-      await deleteOrganization(id);
-      setDeleted(true);
+      const saved = await setOrganizationFlag(id, flagged, flagReason);
+      setFlag({ flagged: saved.flagged, flagReason: saved.flagReason });
+      // The yellow banner shows the flag; only confirm when it is removed
+      if (!flagged) setMessage({ type: "success", text: "Flag removed" });
     } catch (err) {
-      setConfirmOpen(false);
-      setMessage({ type: "error", text: err instanceof Error ? err.message : "Could not delete. Try again." });
+      setMessage({ type: "error", text: err instanceof Error ? err.message : "Could not update the flag. Try again." });
     } finally {
-      setDeleting(false);
+      setFlagging(false);
+      setConfirmOpen(false);
+      setFlagReason("");
     }
   }
 
-  if (deleted) {
-    return (
-      <>
-        {header}
-        <Card title="Entity deleted." subtitle="The entity was removed. Its contacts were kept." aside={<SavedPill text="Deleted" />}>
-          <></>
-        </Card>
-      </>
-    );
-  }
   if (loadError) return <>{header}<ErrorBanner text={loadError} /></>;
   if (!values) return <>{header}<p className="text-muted">Loading…</p></>;
 
@@ -140,6 +139,8 @@ export default function OrganizationEditForm({ id }: { id: string }) {
         subtitle="The entity's name, business type, and website."
         aside={message?.type === "success" ? <SavedPill text={message.text} /> : undefined}
       >
+        {flag.flagged && <FlaggedBanner reason={flag.flagReason} busy={flagging} onUnflag={() => changeFlag(false)} />}
+
         <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
           <FormField
             id="name"
@@ -177,11 +178,16 @@ export default function OrganizationEditForm({ id }: { id: string }) {
         )}
 
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-5">
-          {/* type="button" so this does NOT submit the form; it only opens the dialog */}
-          <Button type="button" variant="danger-ghost" className="-ml-3 px-3" onClick={() => setConfirmOpen(true)}>
-            <TrashIcon />
-            Delete entity
-          </Button>
+          {/* type="button" so this does NOT submit the form; it only opens the dialog.
+              Hidden once the record is flagged (the banner has "Remove flag" instead). */}
+          {!flag.flagged ? (
+            <Button type="button" variant="warning-ghost" className="-ml-3 px-3" onClick={() => setConfirmOpen(true)}>
+              <FlagIcon />
+              Flag as no longer valid
+            </Button>
+          ) : (
+            <span />
+          )}
           <Button type="submit" disabled={saving}>
             {saving ? "Saving…" : "Save changes"}
           </Button>
@@ -190,13 +196,19 @@ export default function OrganizationEditForm({ id }: { id: string }) {
 
       {confirmOpen && (
         <ConfirmDialog
-          title={`Delete ${savedName}?`}
-          message="This permanently removes the entity. Contacts who work there lose this position, but the people are kept. This can't be undone."
-          confirmLabel="Delete"
-          busy={deleting}
-          onConfirm={handleDelete}
-          onCancel={() => setConfirmOpen(false)}
-        />
+          title={`Flag ${savedName} as no longer valid?`}
+          message="The entity stays in the database with its history, but it will be marked as no longer valid. You can remove the flag later."
+          confirmLabel="Flag record"
+          busyLabel="Flagging…"
+          busy={flagging}
+          onConfirm={() => changeFlag(true)}
+          onCancel={() => {
+            setConfirmOpen(false);
+            setFlagReason("");
+          }}
+        >
+          <FlagReasonField value={flagReason} onChange={setFlagReason} />
+        </ConfirmDialog>
       )}
     </form>
   );

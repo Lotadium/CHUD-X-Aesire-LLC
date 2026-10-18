@@ -21,6 +21,14 @@ To use the real API from [`../backend`](../backend/README.md):
 2. Copy `.env.example` to `.env.local` (git-ignored) and set your name in `VITE_API_USER`.
 3. Restart `npm run dev`.
 
+## No deleting: records are flagged
+
+Per the project charter (2.3 f.iv), there is no option to remove records. Instead, a record
+that is no longer valid is **flagged** (with an optional reason). It stays in the database with
+its history and can be unflagged. The real API sends `is_flagged` and `flag_reason`, which the
+database (CHUD-10) and API (CHUD-13) still need to add. Until then, flagging works with the fake
+data and shows a clear "not supported by the server yet" message against the real API.
+
 ## Look and feel
 
 Styling follows the team's Figma mockups: colors and font live in `src/index.css`
@@ -32,9 +40,10 @@ new screens so everything matches.
 ```
 frontend/src/
   components/
-    OrganizationEditForm.tsx   edit + delete an organization (entity)   CHUD-15
-    ContactEditForm.tsx        edit + delete a contact                  CHUD-15
+    OrganizationEditForm.tsx   edit + flag an organization (entity)     CHUD-15
+    ContactEditForm.tsx        edit + flag a contact                    CHUD-15
     ConfirmDialog.tsx          reusable "are you sure?" dialog (styled like the mockup pop-ups)
+    FlagReasonField.tsx        optional reason box in the flag dialog
     FormField.tsx              label + input/dropdown + inline error
     AppShell.tsx               black top bar from the Figma mockups (tabs are placeholders)
     ui.tsx                     page header, card, buttons, saved pill, error banner
@@ -53,7 +62,7 @@ I (Kathleen Collier) used Claude Opus 5.5 (medium effort) as a learning and codi
   regex checks work, and reviewed my validation code and tests while I wrote them.
 - **Front-end styling:** Claude helped restyle the forms to match the Figma mockups
   approved by Aesire LLC.
-- **Code and tests:** Claude generated parts of the forms, the delete confirmation dialog,
+- **Code and tests:** Claude generated parts of the forms, the flag confirmation dialog,
   the API client, and tests. I reviewed, ran, and tested all of it before committing.
 
 Requirements, field decisions, team coordination, and final testing were done by me.

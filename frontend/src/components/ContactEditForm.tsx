@@ -2,11 +2,12 @@
 // See frontend/README.md → "AI assistance".
 
 import { useEffect, useState } from "react";
-import { getContact, updateContact, deleteContact, listOrganizations } from "../lib/api";
+import { getContact, updateContact, setContactFlag, listOrganizations } from "../lib/api";
 import { contactSchema } from "../lib/validation";
 import ConfirmDialog from "./ConfirmDialog";
 import FormField, { SelectField } from "./FormField";
-import { Button, Card, ErrorBanner, PageHeader, SavedPill, TrashIcon } from "./ui";
+import FlagReasonField from "./FlagReasonField";
+import { Button, Card, ErrorBanner, FlagIcon, FlaggedBanner, PageHeader, SavedPill } from "./ui";
 
 // What the form holds while the user types (every input is text)
 type FormValues = {
@@ -38,7 +39,7 @@ const header = (
   <PageHeader
     crumbs={["Records", "Edit contact"]}
     title="Edit Contact"
-    subtitle="Update the contact's details and save, or delete them from the database."
+    subtitle="Update the contact's details and save, or flag them if they're no longer valid."
   />
 );
 
@@ -50,16 +51,19 @@ export default function ContactEditForm({ id }: { id: string }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [deleted, setDeleted] = useState(false);
-  const [savedName, setSavedName] = useState(""); // name as last loaded/saved, shown in the delete dialog
+  const [flag, setFlag] = useState({ flagged: false, flagReason: "" }); // charter 2.3 f.iv: flag, never delete
+  const [flagReason, setFlagReason] = useState(""); // what the user types in the dialog
+  const [flagging, setFlagging] = useState(false);
+  const [savedName, setSavedName] = useState(""); // name as last loaded/saved, shown in the flag dialog
 
   // Load the contact AND the entity list at the same time
   useEffect(() => {
     Promise.all([getContact(id), listOrganizations()])
       .then(([contact, orgs]) => {
-        const { id: _id, ...fields } = contact; // everything except the id goes into the form
+        // the id and flag are kept separately; everything else goes into the form
+        const { id: _id, flagged, flagReason, ...fields } = contact;
         setValues(fields);
+        setFlag({ flagged, flagReason });
         setSavedName(`${fields.firstName} ${fields.lastName}`);
         setOrganizations(orgs);
       })
@@ -94,7 +98,7 @@ export default function ContactEditForm({ id }: { id: string }) {
     setSaving(true);
     try {
       const cleaned = contactSchema.parse(values); // trimmed, email lowercased
-      const { id: _id, ...saved } = await updateContact(id, cleaned);
+      const { id: _id, flagged: _f, flagReason: _r, ...saved } = await updateContact(id, cleaned);
       setValues(saved);
       setSavedName(`${saved.firstName} ${saved.lastName}`);
       setMessage({ type: "success", text: "Changes saved" });
@@ -105,29 +109,24 @@ export default function ContactEditForm({ id }: { id: string }) {
     }
   }
 
-  async function handleDelete() {
-    setDeleting(true);
+  // Flag or unflag the contact. Flagging only runs after the user confirms in the dialog.
+  async function changeFlag(flagged: boolean) {
+    setFlagging(true);
+    setMessage(null);
     try {
-      await deleteContact(id);
-      setDeleted(true);
+      const saved = await setContactFlag(id, flagged, flagReason);
+      setFlag({ flagged: saved.flagged, flagReason: saved.flagReason });
+      // The yellow banner shows the flag; only confirm when it is removed
+      if (!flagged) setMessage({ type: "success", text: "Flag removed" });
     } catch (err) {
-      setConfirmOpen(false);
-      setMessage({ type: "error", text: err instanceof Error ? err.message : "Could not delete. Try again." });
+      setMessage({ type: "error", text: err instanceof Error ? err.message : "Could not update the flag. Try again." });
     } finally {
-      setDeleting(false);
+      setFlagging(false);
+      setConfirmOpen(false);
+      setFlagReason("");
     }
   }
 
-  if (deleted) {
-    return (
-      <>
-        {header}
-        <Card title="Contact deleted." subtitle="The contact and their positions and email addresses were removed." aside={<SavedPill text="Deleted" />}>
-          <></>
-        </Card>
-      </>
-    );
-  }
   if (loadError) return <>{header}<ErrorBanner text={loadError} /></>;
   if (!values) return <>{header}<p className="text-muted">Loading…</p></>;
 
@@ -154,6 +153,8 @@ export default function ContactEditForm({ id }: { id: string }) {
         subtitle="Who this person is, where they work, and how to reach them."
         aside={message?.type === "success" ? <SavedPill text={message.text} /> : undefined}
       >
+        {flag.flagged && <FlaggedBanner reason={flag.flagReason} busy={flagging} onUnflag={() => changeFlag(false)} />}
+
         <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
           {/* Person */}
           {field("firstName", "First Name")}
@@ -187,10 +188,14 @@ export default function ContactEditForm({ id }: { id: string }) {
         )}
 
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-5">
-          <Button type="button" variant="danger-ghost" className="-ml-3 px-3" onClick={() => setConfirmOpen(true)}>
-            <TrashIcon />
-            Delete contact
-          </Button>
+          {!flag.flagged ? (
+            <Button type="button" variant="warning-ghost" className="-ml-3 px-3" onClick={() => setConfirmOpen(true)}>
+              <FlagIcon />
+              Flag as no longer valid
+            </Button>
+          ) : (
+            <span />
+          )}
           <Button type="submit" disabled={saving}>
             {saving ? "Saving…" : "Save changes"}
           </Button>
@@ -199,13 +204,19 @@ export default function ContactEditForm({ id }: { id: string }) {
 
       {confirmOpen && (
         <ConfirmDialog
-          title={`Delete ${savedName}?`}
-          message="This permanently removes the contact, including their positions and email addresses. This can't be undone."
-          confirmLabel="Delete"
-          busy={deleting}
-          onConfirm={handleDelete}
-          onCancel={() => setConfirmOpen(false)}
-        />
+          title={`Flag ${savedName} as no longer valid?`}
+          message="The contact stays in the database with their history, but will be marked as no longer valid. You can remove the flag later."
+          confirmLabel="Flag record"
+          busyLabel="Flagging…"
+          busy={flagging}
+          onConfirm={() => changeFlag(true)}
+          onCancel={() => {
+            setConfirmOpen(false);
+            setFlagReason("");
+          }}
+        >
+          <FlagReasonField value={flagReason} onChange={setFlagReason} />
+        </ConfirmDialog>
       )}
     </form>
   );

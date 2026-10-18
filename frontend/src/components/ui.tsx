@@ -31,13 +31,12 @@ export function Card({ title, subtitle, aside, children }: { title: string; subt
   );
 }
 
-type ButtonProps = ComponentProps<"button"> & { variant?: "primary" | "secondary" | "danger" | "danger-ghost" };
+type ButtonProps = ComponentProps<"button"> & { variant?: "primary" | "secondary" | "warning-ghost" };
 
 const buttonStyles = {
   primary: "bg-brand text-ink hover:bg-brand-hover",
   secondary: "border border-line bg-white text-ink hover:bg-slate-50",
-  danger: "bg-red-600 text-white hover:bg-red-700",
-  "danger-ghost": "text-red-700 hover:bg-red-50",
+  "warning-ghost": "text-amber-800 hover:bg-amber-50",
 };
 
 export function Button({ variant = "primary", className = "", ...props }: ButtonProps) {
@@ -71,11 +70,30 @@ export function ErrorBanner({ text }: { text: string }) {
   );
 }
 
-// Trash-can icon for delete buttons
-export function TrashIcon() {
+// Flag icon for "Flag as no longer valid"
+export function FlagIcon() {
   return (
     <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
-      <path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.5h6.6L12 4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3.5 14V2.5M3.5 3h8l-1.5 3 1.5 3h-8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+// Amber box shown on a record that is flagged as no longer valid (charter 2.3 f.iv).
+// The record is kept; authorized staff can remove the flag if it was a mistake.
+export function FlaggedBanner({ reason, busy, onUnflag }: { reason: string; busy: boolean; onUnflag: () => void }) {
+  return (
+    <div role="status" className="mb-5 flex flex-wrap items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      <div className="flex items-start gap-2">
+        <span className="mt-0.5"><FlagIcon /></span>
+        <div>
+          <p className="font-semibold">Flagged as no longer valid</p>
+          <p className="mt-0.5">{reason ? `Reason: ${reason.replace(/[.!?]?$/, ".")}` : "No reason given."} The record and its history are kept.</p>
+        </div>
+      </div>
+      <Button type="button" variant="secondary" className="h-8 px-3 text-xs" onClick={onUnflag} disabled={busy}>
+        {busy ? "Removing flag…" : "Remove flag"}
+      </Button>
+    </div>
   );
 }

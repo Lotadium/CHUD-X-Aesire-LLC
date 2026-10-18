@@ -41,33 +41,46 @@ test("saves changes through the API", async () => {
   expect((await getOrganization("1")).name).toBe("Metro Fire District");
 });
 
-test("delete asks for confirmation, and Cancel keeps the record", async () => {
+// ---------- Flag instead of delete (charter 2.3 f.iv) ----------
+
+test("there is no delete button", async () => {
+  render(<OrganizationEditForm id="1" />);
+  await screen.findByLabelText(/Entity Name/);
+  expect(screen.queryByRole("button", { name: /delete/i })).not.toBeInTheDocument();
+});
+
+test("flagging asks for confirmation, and Cancel leaves the record unflagged", async () => {
   const user = userEvent.setup();
   render(<OrganizationEditForm id="1" />);
-  await user.click(await screen.findByRole("button", { name: "Delete entity" }));
+  await user.click(await screen.findByRole("button", { name: "Flag as no longer valid" }));
   expect(screen.getByRole("alertdialog")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
   await user.click(screen.getByRole("button", { name: "Cancel" }));
   expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   const { getOrganization } = await import("../lib/api");
-  await expect(getOrganization("1")).resolves.toBeTruthy();
+  expect((await getOrganization("1")).flagged).toBe(false);
 });
 
-test("confirming the dialog deletes the record", async () => {
+test("confirming flags the record, keeps it, and it can be unflagged", async () => {
   const user = userEvent.setup();
   render(<OrganizationEditForm id="1" />);
-  await user.click(await screen.findByRole("button", { name: "Delete entity" }));
-  await user.click(screen.getByRole("button", { name: "Delete" }));
-  expect(await screen.findByText("Entity deleted.")).toBeInTheDocument();
+  await user.click(await screen.findByRole("button", { name: "Flag as no longer valid" }));
+  await user.type(screen.getByLabelText(/Reason/), "District merged");
+  await user.click(screen.getByRole("button", { name: "Flag record" }));
+  expect(await screen.findByText("Reason: District merged", { exact: false })).toBeInTheDocument();
   const { getOrganization } = await import("../lib/api");
-  await expect(getOrganization("1")).rejects.toThrow("not found");
+  const org = await getOrganization("1");
+  expect(org.flagged).toBe(true); // still in the database, just flagged
+  await user.click(screen.getByRole("button", { name: "Remove flag" }));
+  expect(await screen.findByText("Flag removed")).toBeInTheDocument();
+  expect((await getOrganization("1")).flagged).toBe(false);
 });
 
-test("the delete dialog names the saved entity even if the name box was cleared", async () => {
+test("the flag dialog names the saved entity even if the name box was cleared", async () => {
   const user = userEvent.setup();
   render(<OrganizationEditForm id="2" />);
   const name = await screen.findByLabelText(/Entity Name/);
   await user.clear(name);
-  await user.click(screen.getByRole("button", { name: "Delete entity" }));
-  expect(screen.getByRole("heading", { name: "Delete Folsom Water District?" })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Flag as no longer valid" }));
+  expect(screen.getByRole("heading", { name: /Flag Folsom Water District/ })).toBeInTheDocument();
 });

@@ -6,7 +6,10 @@
 //   - websites:     API needs https://, so it is added when missing
 //   - blanks:       form uses "", API uses null
 //   - contacts:     one contact = a person + a position + an email (up to 3 requests)
-import type { Contact, Organization } from "./fakeApi";
+//   - no deleting:  per the charter (2.3 f.iv) records are flagged, never removed.
+//                   Flags use `is_flagged` + `flag_reason` columns on organization and
+//                   person, which the database (CHUD-10) and API (CHUD-13) still need to add.
+import type { Contact, Flag, Organization } from "./fakeApi";
 
 // Where the API lives. Set VITE_API_URL in .env.local; defaults to Irene's local server.
 const BASE_URL: string = import.meta.env.VITE_API_URL ?? "http://localhost:8787/api";
@@ -27,7 +30,7 @@ async function request<T>(path: string, method = "GET", body?: unknown): Promise
   } catch {
     throw new Error("Can't reach the server. Check that the API is running and try again.");
   }
-  if (res.status === 204) return undefined as T; // success with no content (deletes)
+  if (res.status === 204) return undefined as T; // success with no content
   const data = await res.json().catch(() => null);
   if (!res.ok) {
     // API errors look like { error: "...", fields: { name: "is required" } }
@@ -41,6 +44,23 @@ const toNumber = (id: string) => Number(id);
 const blankToNull = (v: string | undefined) => (v === undefined || v.trim() === "" ? null : v.trim());
 const nullToBlank = (v: string | null | undefined) => v ?? "";
 
+// Flag columns as the API will send them (missing until the backend adds them)
+type ApiFlag = { is_flagged?: boolean | null; flag_reason?: string | null };
+const toFlag = (r: ApiFlag): Flag => ({ flagged: r.is_flagged === true, flagReason: nullToBlank(r.flag_reason) });
+
+// Send a flag change. If the backend doesn't have the flag columns yet, it answers
+// "No updatable fields were provided", so explain that instead of showing a confusing error.
+async function sendFlag<T>(path: string, flagged: boolean, reason: string): Promise<T> {
+  try {
+    return await request<T>(path, "PATCH", { is_flagged: flagged, flag_reason: flagged ? blankToNull(reason) : null });
+  } catch (err) {
+    if (err instanceof Error && /No updatable fields/i.test(err.message)) {
+      throw new Error("Flagging isn't supported by the server yet. The database and API need the is_flagged column (CHUD-10/CHUD-13).");
+    }
+    throw err;
+  }
+}
+
 // "metrofire.ca.gov" -> "https://metrofire.ca.gov"
 function withHttps(url: string): string | null {
   const v = url.trim();
@@ -50,7 +70,7 @@ function withHttps(url: string): string | null {
 
 // ---------- shapes the API sends back (only the fields we use) ----------
 
-type ApiOrganization = { organization_id: number; domain_id: number; name: string; website_url: string | null };
+type ApiOrganization = { organization_id: number; domain_id: number; name: string; website_url: string | null } & ApiFlag;
 type ApiPosition = {
   position_id: number;
   organization_id: number;
@@ -60,7 +80,7 @@ type ApiPosition = {
   mobile_phone: string | null;
 };
 type ApiEmail = { email_id: number; address: string };
-type ApiPerson = {
+type ApiPerson = ApiFlag & {
   person_id: number;
   first_name: string;
   middle_name: string | null;
@@ -84,6 +104,7 @@ function toOrganization(o: ApiOrganization): Organization {
     name: o.name,
     domainId: String(o.domain_id),
     websiteUrl: nullToBlank(o.website_url),
+    ...toFlag(o),
   };
 }
 
@@ -99,10 +120,9 @@ export async function updateOrganization(id: string, changes: Partial<Organizati
   return toOrganization(await request<ApiOrganization>(`/organizations/${id}`, "PATCH", body));
 }
 
-// force=true: also removes contacts' positions at this organization (the people are kept).
-// The confirmation dialog warns about this before the user confirms.
-export async function deleteOrganization(id: string): Promise<void> {
-  await request<void>(`/organizations/${id}?force=true`, "DELETE");
+// Flag (or unflag) an entity as no longer valid. Nothing is removed.
+export async function setOrganizationFlag(id: string, flagged: boolean, reason = ""): Promise<Organization> {
+  return toOrganization(await sendFlag<ApiOrganization>(`/organizations/${id}`, flagged, reason));
 }
 
 export async function listOrganizations(): Promise<{ id: string; name: string }[]> {
@@ -130,6 +150,7 @@ function toContact(p: ApiPerson): Contact {
     phoneExt: nullToBlank(pos?.phone_ext),
     mobilePhone: nullToBlank(pos?.mobile_phone),
     email: email?.address ?? "",
+    ...toFlag(p),
   };
 }
 
@@ -171,8 +192,8 @@ export async function updateContact(id: string, changes: Partial<Contact>): Prom
   return getContact(id); // reload so the form shows exactly what was saved
 }
 
-// Deleting a person also deletes their positions and emails (handled by the API)
-export async function deleteContact(id: string): Promise<void> {
-  await request<void>(`/people/${id}`, "DELETE");
-  linkedRows.delete(id);
+// Flag (or unflag) a contact as no longer valid. The flag lives on the person record.
+export async function setContactFlag(id: string, flagged: boolean, reason = ""): Promise<Contact> {
+  await sendFlag(`/people/${id}`, flagged, reason);
+  return getContact(id);
 }

@@ -33,20 +33,30 @@ test("saves changes through the API", async () => {
   expect((await getContact("1")).title).toBe("Clerk of the Board");
 });
 
-test("delete asks for confirmation, and Cancel keeps the record", async () => {
+// ---------- Flag instead of delete (charter 2.3 f.iv) ----------
+
+test("there is no delete button", async () => {
+  render(<ContactEditForm id="1" />);
+  await screen.findByDisplayValue("Dana");
+  expect(screen.queryByRole("button", { name: /delete/i })).not.toBeInTheDocument();
+});
+
+test("flagging asks for confirmation, and Cancel leaves the contact unflagged", async () => {
   const user = userEvent.setup();
   render(<ContactEditForm id="1" />);
-  await user.click(await screen.findByRole("button", { name: "Delete contact" }));
+  await user.click(await screen.findByRole("button", { name: "Flag as no longer valid" }));
   expect(screen.getByRole("alertdialog")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Cancel" }));
   const { getContact } = await import("../lib/api");
-  await expect(getContact("1")).resolves.toBeTruthy();
+  expect((await getContact("1")).flagged).toBe(false);
 });
 
-test("confirming the dialog deletes the contact", async () => {
+test("confirming flags the contact and keeps the record", async () => {
   const user = userEvent.setup();
   render(<ContactEditForm id="1" />);
-  await user.click(await screen.findByRole("button", { name: "Delete contact" }));
-  await user.click(screen.getByRole("button", { name: "Delete" }));
-  expect(await screen.findByText("Contact deleted.")).toBeInTheDocument();
+  await user.click(await screen.findByRole("button", { name: "Flag as no longer valid" }));
+  await user.click(screen.getByRole("button", { name: "Flag record" }));
+  expect(await screen.findByText("Flagged as no longer valid", { selector: "p" })).toBeInTheDocument();
+  const { getContact } = await import("../lib/api");
+  expect((await getContact("1")).flagged).toBe(true); // still in the database
 });

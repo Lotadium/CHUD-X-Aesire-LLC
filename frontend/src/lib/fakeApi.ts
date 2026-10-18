@@ -8,13 +8,17 @@ const delay = () => new Promise((resolve) => setTimeout(resolve, 300));
 
 // ---------- Organizations ----------
 
-// The shape of an organization: the form fields plus an id
-export type Organization = z.infer<typeof organizationSchema> & { id: string };
+// Charter 2.3(f)(iv): records are never removed. A record that is no longer valid
+// is FLAGGED instead; it stays in the database with its history kept.
+export type Flag = { flagged: boolean; flagReason: string };
+
+// The shape of an organization: the form fields plus an id and its flag
+export type Organization = z.infer<typeof organizationSchema> & { id: string } & Flag;
 
 // Pretend database (resets every time the page reloads)
 const organizations: Organization[] = [
-  { id: "1", name: "Sacramento Metro Fire", domainId: "1", websiteUrl: "https://metrofire.ca.gov/" },
-  { id: "2", name: "Folsom Water District", domainId: "2", websiteUrl: "" },
+  { id: "1", name: "Sacramento Metro Fire", domainId: "1", websiteUrl: "https://metrofire.ca.gov/", flagged: false, flagReason: "" },
+  { id: "2", name: "Folsom Water District", domainId: "2", websiteUrl: "", flagged: false, flagReason: "" },
 ];
 
 // Options for the "Domain" dropdown (Ryan's domain table)
@@ -44,11 +48,9 @@ export async function updateOrganization(id: string, changes: Partial<Organizati
   return { ...organizations[index] };
 }
 
-export async function deleteOrganization(id: string): Promise<void> {
-  await delay();
-  const index = organizations.findIndex((o) => o.id === id);
-  if (index === -1) throw new Error("Organization not found.");
-  organizations.splice(index, 1);
+// Flag (or unflag) a record as no longer valid. Nothing is removed.
+export async function setOrganizationFlag(id: string, flagged: boolean, reason = ""): Promise<Organization> {
+  return updateOrganization(id, { flagged, flagReason: flagged ? reason.trim() : "" });
 }
 
 // Options for the contact form's "Organization" dropdown: just id + name
@@ -59,15 +61,17 @@ export async function listOrganizations(): Promise<{ id: string; name: string }[
 
 // ---------- Contacts ----------
 
-// The shape of a contact: the form fields plus an id
-export type Contact = z.infer<typeof contactSchema> & { id: string };
+// The shape of a contact: the form fields plus an id and its flag
+export type Contact = z.infer<typeof contactSchema> & { id: string } & Flag;
 
 // Pretend database. organizationId "1" = Sacramento Metro Fire, "2" = Folsom Water District
 const contacts: Contact[] = [
   { id: "1", firstName: "Dana", middleName: "", lastName: "Lopez", organizationId: "1", title: "Board Clerk",
-    phone: "(916) 859-4300", phoneExt: "12", mobilePhone: "", email: "dlopez@metrofire.ca.gov" },
+    phone: "(916) 859-4300", phoneExt: "12", mobilePhone: "", email: "dlopez@metrofire.ca.gov",
+    flagged: false, flagReason: "" },
   { id: "2", firstName: "Marcus", middleName: "J", lastName: "Reed", organizationId: "2", title: "General Manager",
-    phone: "(916) 555-0142", phoneExt: "", mobilePhone: "(916) 555-0199", email: "" },
+    phone: "(916) 555-0142", phoneExt: "", mobilePhone: "(916) 555-0199", email: "",
+    flagged: false, flagReason: "" },
 ];
 
 export async function getContact(id: string): Promise<Contact> {
@@ -85,9 +89,7 @@ export async function updateContact(id: string, changes: Partial<Contact>): Prom
   return { ...contacts[index] };
 }
 
-export async function deleteContact(id: string): Promise<void> {
-  await delay();
-  const index = contacts.findIndex((c) => c.id === id);
-  if (index === -1) throw new Error("Contact not found.");
-  contacts.splice(index, 1);
+// Flag (or unflag) a contact as no longer valid. Nothing is removed.
+export async function setContactFlag(id: string, flagged: boolean, reason = ""): Promise<Contact> {
+  return updateContact(id, { flagged, flagReason: flagged ? reason.trim() : "" });
 }
