@@ -1,7 +1,9 @@
 import { useEffect, useRef } from "react";
+import { Button } from "./ui";
 
 // A pop-up that asks "are you sure?" before something that can't be undone.
-// Reusable: the organization form and the contact form both use it.
+// Styled like the mockups' pop-ups: centered card, round icon, title, short message.
+// Reusable: the entity form and the contact form both use it.
 type Props = {
   title: string;
   message: string;
@@ -27,34 +29,30 @@ export default function ConfirmDialog({ title, message, confirmLabel, busy, onCo
 
   return (
     // Dark see-through background behind the dialog
-    <div className="fixed inset-0 flex items-center justify-center bg-black/40 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4">
       <div
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-title"
         aria-describedby="confirm-message"
-        className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl"
+        className="w-full max-w-md rounded-xl bg-white p-6 text-center shadow-xl"
       >
-        <h2 id="confirm-title" className="text-lg font-semibold">{title}</h2>
-        <p id="confirm-message" className="mt-2 text-sm text-slate-600">{message}</p>
-        <div className="mt-6 flex justify-end gap-3">
-          <button
-            ref={cancelRef}
-            type="button"
-            onClick={onCancel}
-            disabled={busy}
-            className="rounded border border-slate-300 px-4 py-2 font-medium hover:bg-slate-50"
-          >
+        <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-red-50 text-lg font-bold text-red-600" aria-hidden="true">
+          !
+        </div>
+        <h2 id="confirm-title" className="mt-3 text-lg font-semibold">
+          {title}
+        </h2>
+        <p id="confirm-message" className="mt-2 text-sm text-muted">
+          {message}
+        </p>
+        <div className="mt-6 flex justify-center gap-3">
+          <Button ref={cancelRef} type="button" variant="secondary" onClick={onCancel} disabled={busy}>
             Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={busy}
-            className="rounded bg-red-700 px-4 py-2 font-medium text-white hover:bg-red-800 disabled:opacity-50"
-          >
+          </Button>
+          <Button type="button" variant="danger" onClick={onConfirm} disabled={busy}>
             {busy ? "Deleting…" : confirmLabel}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

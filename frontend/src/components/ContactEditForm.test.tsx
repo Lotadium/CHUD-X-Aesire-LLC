@@ -6,8 +6,8 @@ import ContactEditForm from "./ContactEditForm";
 test("pre-fills the form with the existing contact", async () => {
   render(<ContactEditForm id="1" />);
   expect(await screen.findByDisplayValue("Dana")).toBeInTheDocument();
-  expect(screen.getByLabelText(/Last name/)).toHaveValue("Lopez");
-  expect(screen.getByLabelText(/Organization/)).toHaveValue("1");
+  expect(screen.getByLabelText(/Last Name/)).toHaveValue("Lopez");
+  expect(screen.getByLabelText(/^Entity/)).toHaveValue("1");
   expect(screen.getByLabelText(/^Email/)).toHaveValue("dlopez@metrofire.ca.gov");
 });
 
@@ -28,7 +28,7 @@ test("saves changes through the API", async () => {
   await user.clear(title);
   await user.type(title, "Clerk of the Board");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
-  expect(await screen.findByText("Changes saved.")).toBeInTheDocument();
+  expect(await screen.findByText("Changes saved")).toBeInTheDocument();
   const { getContact } = await import("../lib/api");
   expect((await getContact("1")).title).toBe("Clerk of the Board");
 });

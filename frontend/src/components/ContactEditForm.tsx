@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { getContact, updateContact, deleteContact, listOrganizations } from "../lib/api";
 import { contactSchema } from "../lib/validation";
 import ConfirmDialog from "./ConfirmDialog";
-import FormField from "./FormField";
+import FormField, { SelectField } from "./FormField";
+import { Button, Card, ErrorBanner, PageHeader, SavedPill, TrashIcon } from "./ui";
 
 // What the form holds while the user types (every input is text)
 type FormValues = {
@@ -30,6 +31,14 @@ function validate(values: FormValues): Partial<Record<FieldName, string>> {
   return errors;
 }
 
+const header = (
+  <PageHeader
+    crumbs={["Records", "Edit contact"]}
+    title="Edit Contact"
+    subtitle="Update the contact's details and save, or delete them from the database."
+  />
+);
+
 export default function ContactEditForm({ id }: { id: string }) {
   const [values, setValues] = useState<FormValues | null>(null); // null = not loaded yet
   const [organizations, setOrganizations] = useState<{ id: string; name: string }[]>([]);
@@ -40,13 +49,15 @@ export default function ContactEditForm({ id }: { id: string }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleted, setDeleted] = useState(false);
+  const [savedName, setSavedName] = useState(""); // name as last loaded/saved, shown in the delete dialog
 
-  // Load the contact AND the organization list at the same time
+  // Load the contact AND the entity list at the same time
   useEffect(() => {
     Promise.all([getContact(id), listOrganizations()])
       .then(([contact, orgs]) => {
         const { id: _id, ...fields } = contact; // everything except the id goes into the form
         setValues(fields);
+        setSavedName(`${fields.firstName} ${fields.lastName}`);
         setOrganizations(orgs);
       })
       .catch((err) => setLoadError(err.message));
@@ -56,6 +67,7 @@ export default function ContactEditForm({ id }: { id: string }) {
     if (!values) return;
     const next = { ...values, [field]: value };
     setValues(next);
+    setMessage(null);
     if (errors[field]) {
       setErrors({ ...errors, [field]: validate(next)[field] });
     }
@@ -81,7 +93,8 @@ export default function ContactEditForm({ id }: { id: string }) {
       const cleaned = contactSchema.parse(values); // trimmed, email lowercased
       const { id: _id, ...saved } = await updateContact(id, cleaned);
       setValues(saved);
-      setMessage({ type: "success", text: "Changes saved." });
+      setSavedName(`${saved.firstName} ${saved.lastName}`);
+      setMessage({ type: "success", text: "Changes saved" });
     } catch (err) {
       setMessage({ type: "error", text: err instanceof Error ? err.message : "Something went wrong. Try again." });
     } finally {
@@ -102,16 +115,26 @@ export default function ContactEditForm({ id }: { id: string }) {
     }
   }
 
-  if (deleted) return <p role="status" className="text-green-700">Contact deleted.</p>;
-  if (loadError) return <p className="text-red-700">{loadError}</p>;
-  if (!values) return <p className="text-slate-500">Loading…</p>;
+  if (deleted) {
+    return (
+      <>
+        {header}
+        <Card title="Contact deleted." subtitle="The contact and their positions and email addresses were removed." aside={<SavedPill text="Deleted" />}>
+          <></>
+        </Card>
+      </>
+    );
+  }
+  if (loadError) return <>{header}<ErrorBanner text={loadError} /></>;
+  if (!values) return <>{header}<p className="text-muted">Loading…</p></>;
 
-  // Shortcut: everything FormField needs for one field, so each field below is one line
-  const field = (name: FieldName, label: string, optional = false) => (
+  // Shortcut: everything FormField needs for one field
+  const field = (name: FieldName, label: string, optional = false, className = "") => (
     <FormField
       id={name}
       label={label}
       optional={optional}
+      className={className}
       value={values[name]}
       error={errors[name]}
       onChange={(v) => setField(name, v)}
@@ -120,73 +143,60 @@ export default function ContactEditForm({ id }: { id: string }) {
   );
 
   return (
-    <form onSubmit={handleSubmit} noValidate className="max-w-lg space-y-4 rounded-lg bg-white p-6 shadow">
-      <h2 className="text-xl font-semibold">Edit contact</h2>
+    <form onSubmit={handleSubmit} noValidate>
+      {header}
 
-      {/* Person */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        {field("firstName", "First name")}
-        {field("middleName", "Middle name", true)}
-        {field("lastName", "Last name")}
-      </div>
+      <Card
+        title="Contact details"
+        subtitle="Who this person is, where they work, and how to reach them."
+        aside={message?.type === "success" ? <SavedPill text={message.text} /> : undefined}
+      >
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+          {/* Person */}
+          {field("firstName", "First Name")}
+          {field("middleName", "Middle Name", true)}
+          {field("lastName", "Last Name")}
 
-      {/* Position: where they work */}
-      <div>
-        <label htmlFor="organizationId" className="block text-sm font-medium">Organization *</label>
-        <select
-          id="organizationId"
-          className={`mt-1 w-full rounded border px-3 py-2 ${errors.organizationId ? "border-red-500" : "border-slate-300"}`}
-          value={values.organizationId}
-          onChange={(e) => setField("organizationId", e.target.value)}
-          onBlur={() => handleBlur("organizationId")}
-          aria-invalid={!!errors.organizationId}
-          aria-describedby={errors.organizationId ? "organizationId-error" : undefined}
-        >
-          <option value="">Choose an organization…</option>
-          {organizations.map((o) => (
-            <option key={o.id} value={o.id}>{o.name}</option>
-          ))}
-        </select>
-        {errors.organizationId && (
-          <p id="organizationId-error" className="mt-1 text-sm text-red-700">{errors.organizationId}</p>
+          {/* Position: where they work */}
+          <SelectField
+            id="organizationId"
+            label="Entity"
+            placeholder="Select an entity…"
+            options={organizations}
+            value={values.organizationId}
+            error={errors.organizationId}
+            onChange={(v) => setField("organizationId", v)}
+            onBlur={() => handleBlur("organizationId")}
+          />
+          {field("title", "Title", true, "md:col-span-2")}
+
+          {/* How to reach them */}
+          {field("phone", "Phone", true)}
+          {field("phoneExt", "Ext.", true)}
+          {field("mobilePhone", "Mobile Phone", true)}
+          {field("email", "Email", true, "md:col-span-2")}
+        </div>
+
+        {message?.type === "error" && (
+          <div className="mt-5">
+            <ErrorBanner text={message.text} />
+          </div>
         )}
-      </div>
-      {field("title", "Title", true)}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="sm:col-span-2">{field("phone", "Phone", true)}</div>
-        {field("phoneExt", "Ext.", true)}
-      </div>
-      {field("mobilePhone", "Mobile phone", true)}
 
-      {/* Email */}
-      {field("email", "Email", true)}
-
-      {message && (
-        <p role="status" className={message.type === "success" ? "text-green-700" : "text-red-700"}>
-          {message.text}
-        </p>
-      )}
-
-      <div className="flex justify-between">
-        <button
-          type="submit"
-          disabled={saving}
-          className="rounded bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800 disabled:opacity-50"
-        >
-          {saving ? "Saving…" : "Save changes"}
-        </button>
-        <button
-          type="button"
-          onClick={() => setConfirmOpen(true)}
-          className="rounded border border-red-700 px-4 py-2 font-medium text-red-700 hover:bg-red-50"
-        >
-          Delete contact
-        </button>
-      </div>
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-5">
+          <Button type="button" variant="danger-ghost" className="-ml-3 px-3" onClick={() => setConfirmOpen(true)}>
+            <TrashIcon />
+            Delete contact
+          </Button>
+          <Button type="submit" disabled={saving}>
+            {saving ? "Saving…" : "Save changes"}
+          </Button>
+        </div>
+      </Card>
 
       {confirmOpen && (
         <ConfirmDialog
-          title={`Delete ${values.firstName} ${values.lastName}?`}
+          title={`Delete ${savedName}?`}
           message="This permanently removes the contact, including their positions and email addresses. This can't be undone."
           confirmLabel="Delete"
           busy={deleting}

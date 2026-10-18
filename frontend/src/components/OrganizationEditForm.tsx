@@ -1,13 +1,18 @@
 import { useEffect, useState } from "react";
 import { getOrganization, updateOrganization, deleteOrganization, listDomains } from "../lib/api";
+import { organizationSchema } from "../lib/validation";
 import ConfirmDialog from "./ConfirmDialog";
-import { organizationSchema } from "../lib/validation"; // NEW
+import FormField, { SelectField } from "./FormField";
+import { Button, Card, ErrorBanner, PageHeader, SavedPill, TrashIcon } from "./ui";
+
+// Edit form for an entity (an "organization" in the database).
+// The screen copy says "entity" to match the Figma mockups.
 
 // What the form holds while the user types (every input is text)
 type FormValues = { name: string; domainId: string; websiteUrl: string };
 type FieldName = keyof FormValues;
 
-// NEW: run the Zod schema and turn its errors into { fieldName: "message" }
+// Run the Zod schema and turn its errors into { fieldName: "message" }
 function validate(values: FormValues): Partial<Record<FieldName, string>> {
   const result = organizationSchema.safeParse(values);
   if (result.success) return {};
@@ -19,51 +24,57 @@ function validate(values: FormValues): Partial<Record<FieldName, string>> {
   return errors;
 }
 
-// NEW: red border when a field has an error
-const inputClass = (hasError: boolean) =>
-  `mt-1 w-full rounded border px-3 py-2 ${hasError ? "border-red-500" : "border-slate-300"}`;
+const header = (
+  <PageHeader
+    crumbs={["Records", "Edit entity"]}
+    title="Edit Entity"
+    subtitle="Update the entity's details and save, or delete it from the database."
+  />
+);
 
 export default function OrganizationEditForm({ id }: { id: string }) {
   const [values, setValues] = useState<FormValues | null>(null); // null = not loaded yet
   const [domains, setDomains] = useState<{ id: string; name: string }[]>([]); // options for the Domain dropdown
   const [loadError, setLoadError] = useState("");
-  const [errors, setErrors] = useState<Partial<Record<FieldName, string>>>({}); // NEW
+  const [errors, setErrors] = useState<Partial<Record<FieldName, string>>>({});
   const [saving, setSaving] = useState(false); // true while the save request is running
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false); // is the "are you sure?" dialog showing?
   const [deleting, setDeleting] = useState(false);
   const [deleted, setDeleted] = useState(false);
+  const [savedName, setSavedName] = useState(""); // name as last loaded/saved, shown in the delete dialog
 
-  // Runs once when the form appears (and again if the id changes): load the record
+  // Runs once when the form appears (and again if the id changes):
+  // load the entity AND the domain list at the same time
   useEffect(() => {
-    // Load the organization AND the domain list at the same time
     Promise.all([getOrganization(id), listDomains()])
       .then(([org, domainList]) => {
         setValues({ name: org.name, domainId: org.domainId, websiteUrl: org.websiteUrl });
+        setSavedName(org.name);
         setDomains(domainList);
       })
       .catch((err) => setLoadError(err.message));
   }, [id]);
 
-  // Update one field, keep the rest.
-  // NEW: if that field is already showing an error, re-check it as the user types
-  // so the message disappears as soon as it's fixed.
+  // Update one field, keep the rest. If that field is already showing an error,
+  // re-check it as the user types so the message disappears as soon as it's fixed.
   function setField(field: FieldName, value: string) {
     if (!values) return;
     const next = { ...values, [field]: value };
     setValues(next);
+    setMessage(null);
     if (errors[field]) {
       setErrors({ ...errors, [field]: validate(next)[field] });
     }
   }
 
-  // NEW: when the user leaves a field, check just that field
+  // When the user leaves a field, check just that field
   function handleBlur(field: FieldName) {
     if (!values) return;
     setErrors({ ...errors, [field]: validate(values)[field] });
   }
 
-  // NEW: on submit, check every field. (Saving comes in Part 3.)
+  // On submit: check every field, then save
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault(); // stop the browser from reloading the page
     if (!values) return;
@@ -81,7 +92,8 @@ export default function OrganizationEditForm({ id }: { id: string }) {
       const cleaned = organizationSchema.parse(values);
       const saved = await updateOrganization(id, cleaned);
       setValues({ name: saved.name, domainId: saved.domainId, websiteUrl: saved.websiteUrl });
-      setMessage({ type: "success", text: "Changes saved." });
+      setSavedName(saved.name);
+      setMessage({ type: "success", text: "Changes saved" });
     } catch (err) {
       setMessage({ type: "error", text: err instanceof Error ? err.message : "Something went wrong. Try again." });
     } finally {
@@ -103,90 +115,80 @@ export default function OrganizationEditForm({ id }: { id: string }) {
     }
   }
 
-  if (deleted) return <p role="status" className="text-green-700">Organization deleted.</p>;
-  if (loadError) return <p className="text-red-700">{loadError}</p>;
-  if (!values) return <p className="text-slate-500">Loading…</p>;
+  if (deleted) {
+    return (
+      <>
+        {header}
+        <Card title="Entity deleted." subtitle="The entity was removed. Its contacts were kept." aside={<SavedPill text="Deleted" />}>
+          <></>
+        </Card>
+      </>
+    );
+  }
+  if (loadError) return <>{header}<ErrorBanner text={loadError} /></>;
+  if (!values) return <>{header}<p className="text-muted">Loading…</p></>;
 
   return (
-    <form onSubmit={handleSubmit} noValidate className="max-w-lg space-y-4 rounded-lg bg-white p-6 shadow">
-      <h2 className="text-xl font-semibold">Edit organization</h2>
+    <form onSubmit={handleSubmit} noValidate>
+      {header}
 
-      <div>
-        <label htmlFor="name" className="block text-sm font-medium">Organization name *</label>
-        <input
-          id="name"
-          className={inputClass(!!errors.name)}
-          value={values.name}
-          onChange={(e) => setField("name", e.target.value)}
-          onBlur={() => handleBlur("name")}
-          aria-invalid={!!errors.name}
-          aria-describedby={errors.name ? "name-error" : undefined}
-        />
-        {errors.name && <p id="name-error" className="mt-1 text-sm text-red-700">{errors.name}</p>}
-      </div>
+      <Card
+        title="Entity details"
+        subtitle="The entity's name, business type, and website."
+        aside={message?.type === "success" ? <SavedPill text={message.text} /> : undefined}
+      >
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+          <FormField
+            id="name"
+            label="Entity Name"
+            value={values.name}
+            error={errors.name}
+            onChange={(v) => setField("name", v)}
+            onBlur={() => handleBlur("name")}
+          />
+          <SelectField
+            id="domainId"
+            label="Domain"
+            placeholder="Select a domain…"
+            options={domains}
+            value={values.domainId}
+            error={errors.domainId}
+            onChange={(v) => setField("domainId", v)}
+            onBlur={() => handleBlur("domainId")}
+          />
+          <FormField
+            id="websiteUrl"
+            label="Website URL"
+            optional
+            value={values.websiteUrl}
+            error={errors.websiteUrl}
+            onChange={(v) => setField("websiteUrl", v)}
+            onBlur={() => handleBlur("websiteUrl")}
+          />
+        </div>
 
-      <div>
-        <label htmlFor="domainId" className="block text-sm font-medium">Domain *</label>
-        <select
-          id="domainId"
-          className={inputClass(!!errors.domainId)}
-          value={values.domainId}
-          onChange={(e) => setField("domainId", e.target.value)}
-          onBlur={() => handleBlur("domainId")}
-          aria-invalid={!!errors.domainId}
-          aria-describedby={errors.domainId ? "domainId-error" : undefined}
-        >
-          <option value="">Choose a domain…</option>
-          {domains.map((d) => (
-            <option key={d.id} value={d.id}>{d.name}</option>
-          ))}
-        </select>
-        {errors.domainId && <p id="domainId-error" className="mt-1 text-sm text-red-700">{errors.domainId}</p>}
-      </div>
+        {message?.type === "error" && (
+          <div className="mt-5">
+            <ErrorBanner text={message.text} />
+          </div>
+        )}
 
-      <div>
-        <label htmlFor="websiteUrl" className="block text-sm font-medium">Website (optional)</label>
-        <input
-          id="websiteUrl"
-          className={inputClass(!!errors.websiteUrl)}
-          value={values.websiteUrl}
-          onChange={(e) => setField("websiteUrl", e.target.value)}
-          onBlur={() => handleBlur("websiteUrl")}
-          aria-invalid={!!errors.websiteUrl}
-          aria-describedby={errors.websiteUrl ? "websiteUrl-error" : undefined}
-        />
-        {errors.websiteUrl && <p id="websiteUrl-error" className="mt-1 text-sm text-red-700">{errors.websiteUrl}</p>}
-      </div>
-
-      {message && (
-        <p role="status" className={message.type === "success" ? "text-green-700" : "text-red-700"}>
-          {message.text}
-        </p>
-      )}
-
-      <div className="flex justify-between">
-        <button
-          type="submit"
-          disabled={saving}
-          className="rounded bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800 disabled:opacity-50"
-        >
-          {saving ? "Saving…" : "Save changes"}
-        </button>
-
-        {/* type="button" so this does NOT submit the form; it only opens the dialog */}
-        <button
-          type="button"
-          onClick={() => setConfirmOpen(true)}
-          className="rounded border border-red-700 px-4 py-2 font-medium text-red-700 hover:bg-red-50"
-        >
-          Delete organization
-        </button>
-      </div>
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-5">
+          {/* type="button" so this does NOT submit the form; it only opens the dialog */}
+          <Button type="button" variant="danger-ghost" className="-ml-3 px-3" onClick={() => setConfirmOpen(true)}>
+            <TrashIcon />
+            Delete entity
+          </Button>
+          <Button type="submit" disabled={saving}>
+            {saving ? "Saving…" : "Save changes"}
+          </Button>
+        </div>
+      </Card>
 
       {confirmOpen && (
         <ConfirmDialog
-          title={`Delete ${values.name}?`}
-          message="This permanently removes the organization. Contacts who work there lose this position, but the people are kept. This can't be undone."
+          title={`Delete ${savedName}?`}
+          message="This permanently removes the entity. Contacts who work there lose this position, but the people are kept. This can't be undone."
           confirmLabel="Delete"
           busy={deleting}
           onConfirm={handleDelete}

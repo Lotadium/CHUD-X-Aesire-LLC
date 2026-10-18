@@ -32,11 +32,11 @@ test("shows an inline error for a bad website when saving", async () => {
 test("saves changes through the API", async () => {
   const user = userEvent.setup();
   render(<OrganizationEditForm id="1" />);
-  const name = await screen.findByLabelText(/Organization name/);
+  const name = await screen.findByLabelText(/Entity Name/);
   await user.clear(name);
   await user.type(name, "Metro Fire District");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
-  expect(await screen.findByText("Changes saved.")).toBeInTheDocument();
+  expect(await screen.findByText("Changes saved")).toBeInTheDocument();
   const { getOrganization } = await import("../lib/api");
   expect((await getOrganization("1")).name).toBe("Metro Fire District");
 });
@@ -44,7 +44,7 @@ test("saves changes through the API", async () => {
 test("delete asks for confirmation, and Cancel keeps the record", async () => {
   const user = userEvent.setup();
   render(<OrganizationEditForm id="1" />);
-  await user.click(await screen.findByRole("button", { name: "Delete organization" }));
+  await user.click(await screen.findByRole("button", { name: "Delete entity" }));
   expect(screen.getByRole("alertdialog")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
   await user.click(screen.getByRole("button", { name: "Cancel" }));
@@ -56,9 +56,18 @@ test("delete asks for confirmation, and Cancel keeps the record", async () => {
 test("confirming the dialog deletes the record", async () => {
   const user = userEvent.setup();
   render(<OrganizationEditForm id="1" />);
-  await user.click(await screen.findByRole("button", { name: "Delete organization" }));
+  await user.click(await screen.findByRole("button", { name: "Delete entity" }));
   await user.click(screen.getByRole("button", { name: "Delete" }));
-  expect(await screen.findByText("Organization deleted.")).toBeInTheDocument();
+  expect(await screen.findByText("Entity deleted.")).toBeInTheDocument();
   const { getOrganization } = await import("../lib/api");
   await expect(getOrganization("1")).rejects.toThrow("not found");
+});
+
+test("the delete dialog names the saved entity even if the name box was cleared", async () => {
+  const user = userEvent.setup();
+  render(<OrganizationEditForm id="2" />);
+  const name = await screen.findByLabelText(/Entity Name/);
+  await user.clear(name);
+  await user.click(screen.getByRole("button", { name: "Delete entity" }));
+  expect(screen.getByRole("heading", { name: "Delete Folsom Water District?" })).toBeInTheDocument();
 });
