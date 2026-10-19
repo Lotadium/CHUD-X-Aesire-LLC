@@ -50,6 +50,7 @@ export async function updateOrganization(id: string, changes: Partial<Organizati
 
 // Flag (or unflag) a record as no longer valid. Nothing is removed.
 export async function setOrganizationFlag(id: string, flagged: boolean, reason = ""): Promise<Organization> {
+  if (flagged && reason.trim() === "") throw new Error("A reason is required to flag a record.");
   return updateOrganization(id, { flagged, flagReason: flagged ? reason.trim() : "" });
 }
 
@@ -91,5 +92,6 @@ export async function updateContact(id: string, changes: Partial<Contact>): Prom
 
 // Flag (or unflag) a contact as no longer valid. Nothing is removed.
 export async function setContactFlag(id: string, flagged: boolean, reason = ""): Promise<Contact> {
+  if (flagged && reason.trim() === "") throw new Error("A reason is required to flag a record.");
   return updateContact(id, { flagged, flagReason: flagged ? reason.trim() : "" });
 }

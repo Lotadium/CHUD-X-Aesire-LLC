@@ -55,6 +55,7 @@ test("confirming flags the contact and keeps the record", async () => {
   const user = userEvent.setup();
   render(<ContactEditForm id="1" />);
   await user.click(await screen.findByRole("button", { name: "Flag as no longer valid" }));
+  await user.type(screen.getByLabelText(/Reason/), "Retired");
   await user.click(screen.getByRole("button", { name: "Flag record" }));
   expect(await screen.findByText("Flagged as no longer valid", { selector: "p" })).toBeInTheDocument();
   const { getContact } = await import("../lib/api");

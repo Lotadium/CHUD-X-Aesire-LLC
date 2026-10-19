@@ -24,10 +24,10 @@ To use the real API from [`../backend`](../backend/README.md):
 ## No deleting: records are flagged
 
 Per the project charter (2.3 f.iv), there is no option to remove records. Instead, a record
-that is no longer valid is **flagged** (with an optional reason). It stays in the database with
-its history and can be unflagged. The real API sends `is_flagged` and `flag_reason`, which the
-database (CHUD-10) and API (CHUD-13) still need to add. Until then, flagging works with the fake
-data and shows a clear "not supported by the server yet" message against the real API.
+that is no longer valid is **flagged** with a required reason. It stays in the database with
+its history and can be unflagged. The real API stores this in the `is_flagged` and
+`flag_reason` columns (database: CHUD-10, API: CHUD-13).
+Clearing a contact's email also flags that email instead of deleting it.
 
 ## Look and feel
 
@@ -43,7 +43,7 @@ frontend/src/
     OrganizationEditForm.tsx   edit + flag an organization (entity)     CHUD-15
     ContactEditForm.tsx        edit + flag a contact                    CHUD-15
     ConfirmDialog.tsx          reusable "are you sure?" dialog (styled like the mockup pop-ups)
-    FlagReasonField.tsx        optional reason box in the flag dialog
+    FlagReasonField.tsx        required reason box in the flag dialog
     FormField.tsx              label + input/dropdown + inline error
     AppShell.tsx               black top bar from the Figma mockups (tabs are placeholders)
     ui.tsx                     page header, card, buttons, saved pill, error banner

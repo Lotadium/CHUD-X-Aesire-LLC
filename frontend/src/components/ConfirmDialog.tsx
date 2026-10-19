@@ -10,12 +10,13 @@ type Props = {
   confirmLabel: string; // e.g. "Flag record"
   busyLabel: string; // e.g. "Flagging…"
   busy: boolean; // true while the change is running
+  confirmDisabled?: boolean; // e.g. until a required reason is filled in
   onConfirm: () => void;
   onCancel: () => void;
   children?: ReactNode; // optional extra content, e.g. a "reason" box
 };
 
-export default function ConfirmDialog({ title, message, confirmLabel, busyLabel, busy, onConfirm, onCancel, children }: Props) {
+export default function ConfirmDialog({ title, message, confirmLabel, busyLabel, busy, confirmDisabled = false, onConfirm, onCancel, children }: Props) {
   const cancelRef = useRef<HTMLButtonElement>(null);
 
   // When the dialog first opens, put focus on Cancel (the safe choice).
@@ -58,7 +59,7 @@ export default function ConfirmDialog({ title, message, confirmLabel, busyLabel,
           <Button ref={cancelRef} type="button" variant="secondary" onClick={onCancel} disabled={busy}>
             Cancel
           </Button>
-          <Button type="button" onClick={onConfirm} disabled={busy}>
+          <Button type="button" onClick={onConfirm} disabled={busy || confirmDisabled}>
             {busy ? busyLabel : confirmLabel}
           </Button>
         </div>

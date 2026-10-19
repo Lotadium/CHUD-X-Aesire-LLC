@@ -84,3 +84,12 @@ test("the flag dialog names the saved entity even if the name box was cleared", 
   await user.click(screen.getByRole("button", { name: "Flag as no longer valid" }));
   expect(screen.getByRole("heading", { name: /Flag Folsom Water District/ })).toBeInTheDocument();
 });
+
+test("Flag record stays disabled until a reason is entered", async () => {
+  const user = userEvent.setup();
+  render(<OrganizationEditForm id="2" />);
+  await user.click(await screen.findByRole("button", { name: "Flag as no longer valid" }));
+  expect(screen.getByRole("button", { name: "Flag record" })).toBeDisabled();
+  await user.type(screen.getByLabelText(/Reason/), "Closed");
+  expect(screen.getByRole("button", { name: "Flag record" })).toBeEnabled();
+});

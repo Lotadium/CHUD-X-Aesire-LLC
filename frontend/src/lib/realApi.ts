@@ -79,7 +79,7 @@ type ApiPosition = {
   phone_ext: string | null;
   mobile_phone: string | null;
 };
-type ApiEmail = { email_id: number; address: string };
+type ApiEmail = { email_id: number; address: string; is_flagged?: boolean | null };
 type ApiPerson = ApiFlag & {
   person_id: number;
   first_name: string;
@@ -133,12 +133,15 @@ export async function listOrganizations(): Promise<{ id: string; name: string }[
 // ---------- contacts (person + first position + first email) ----------
 
 // Remember which position/email row each contact's form is editing
-const linkedRows = new Map<string, { positionId?: number; emailId?: number }>();
+// (and any flagged emails, in case the user types one of them back in)
+const linkedRows = new Map<string, { positionId?: number; emailId?: number; flaggedEmails?: ApiEmail[] }>();
 
 function toContact(p: ApiPerson): Contact {
   const pos = p.positions[0];
-  const email = p.emails[0];
-  linkedRows.set(String(p.person_id), { positionId: pos?.position_id, emailId: email?.email_id });
+  // Emails are never deleted (charter 2.3 f.iv): a removed email is flagged, so show the first unflagged one
+  const email = p.emails.find((e) => !e.is_flagged);
+  const flaggedEmails = p.emails.filter((e) => e.is_flagged);
+  linkedRows.set(String(p.person_id), { positionId: pos?.position_id, emailId: email?.email_id, flaggedEmails });
   return {
     id: String(p.person_id),
     firstName: p.first_name,
@@ -181,12 +184,20 @@ export async function updateContact(id: string, changes: Partial<Contact>): Prom
     else await request(`/people/${id}/positions`, "POST", position);
   }
 
-  // 3) Email: update, add, or remove
+  // 3) Email: update, add, or "remove". Nothing is deleted: a cleared email is flagged
+  //    as no longer valid (kept with its history), per charter 2.3 f.iv.
   if (changes.email !== undefined) {
     const address = changes.email.trim().toLowerCase();
-    if (links.emailId && address) await request(`/emails/${links.emailId}`, "PATCH", { address });
-    else if (links.emailId && !address) await request(`/emails/${links.emailId}`, "DELETE");
-    else if (address) await request(`/people/${id}/emails`, "POST", { address });
+    const reused = links.flaggedEmails?.find((e) => e.address === address);
+    if (links.emailId && address) {
+      await request(`/emails/${links.emailId}`, "PATCH", { address });
+    } else if (links.emailId && !address) {
+      await request(`/emails/${links.emailId}`, "PATCH", { is_flagged: true, flag_reason: "Removed on the contact form" });
+    } else if (reused) {
+      await request(`/emails/${reused.email_id}`, "PATCH", { is_flagged: false }); // typed an old email back in
+    } else if (address) {
+      await request(`/people/${id}/emails`, "POST", { address });
+    }
   }
 
   return getContact(id); // reload so the form shows exactly what was saved

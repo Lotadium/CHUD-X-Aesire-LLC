@@ -201,6 +201,7 @@ export default function OrganizationEditForm({ id }: { id: string }) {
           confirmLabel="Flag record"
           busyLabel="Flagging…"
           busy={flagging}
+          confirmDisabled={flagReason.trim() === ""}
           onConfirm={() => changeFlag(true)}
           onCancel={() => {
             setConfirmOpen(false);

@@ -54,3 +54,6 @@ test("the API offers no way to delete records", () => {
   const names = Object.keys(api).join(" ");
   expect(names).not.toMatch(/delete|remove/i);
 });
+test("flagging without a reason is refused, like the real API", async () => {
+  await expect(setOrganizationFlag("1", true, "  ")).rejects.toThrow(/reason is required/);
+});
