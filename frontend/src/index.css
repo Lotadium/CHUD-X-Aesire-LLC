@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+/* Colors and font taken from the Figma mockups, so every screen shares one look. */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --color-ink: #0b0c10; /* top nav bar and main text */
+  --color-canvas: #f5f5f5; /* page background */
+  --color-brand: #5fb3bd; /* teal: Aesire badge, primary buttons, active tab */
+  --color-brand-hover: #4fa4ae;
+  --color-brand-strong: #2a7f89; /* teal text and focus rings (readable on white) */
+  --color-line: #e3e5e8; /* card and input borders */
+  --color-muted: #5f6672; /* helper and subtitle text */
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+}
