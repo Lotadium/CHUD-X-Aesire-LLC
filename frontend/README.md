@@ -1,32 +1,68 @@
-# React + TypeScript + Vite
+# CHUD Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React + TypeScript + Vite front end for the Client Tracking Information app.
 
-Currently, two official plugins are available:
+## Run it
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+cd frontend
+npm install
+npm run dev        # http://localhost:5173
+npm test           # unit and component tests
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Fake data or the real API
+
+By default the app uses **fake in-memory data** (`src/lib/fakeApi.ts`), so it runs with no backend.
+
+To use the real API from [`../backend`](../backend/README.md):
+
+1. Start the backend (`cd backend && npm run local`).
+2. Copy `.env.example` to `.env.local` (git-ignored) and set your name in `VITE_API_USER`.
+3. Restart `npm run dev`.
+
+## No deleting: records are flagged
+
+Per the project charter (2.3 f.iv), there is no option to remove records. Instead, a record
+that is no longer valid is **flagged** with a required reason. It stays in the database with
+its history and can be unflagged. The real API stores this in the `is_flagged` and
+`flag_reason` columns (database: CHUD-10, API: CHUD-13).
+Clearing a contact's email also flags that email instead of deleting it.
+
+## Look and feel
+
+Styling follows the team's Figma mockups: colors and font live in `src/index.css`
+(`@theme`), and shared pieces live in `src/components/ui.tsx`. Use those when building
+new screens so everything matches.
+
+## Layout
+
+```
+frontend/src/
+  components/
+    OrganizationEditForm.tsx   edit + flag an organization (entity)     CHUD-15
+    ContactEditForm.tsx        edit + flag a contact                    CHUD-15
+    ConfirmDialog.tsx          reusable "are you sure?" dialog (styled like the mockup pop-ups)
+    FlagReasonField.tsx        required reason box in the flag dialog
+    FormField.tsx              label + input/dropdown + inline error
+    AppShell.tsx               black top bar from the Figma mockups (tabs are placeholders)
+    ui.tsx                     page header, card, buttons, saved pill, error banner
+  lib/
+    validation.ts              Zod rules for organizations and contacts
+    api.ts                     picks fakeApi or realApi
+    fakeApi.ts                 in-memory sample data
+    realApi.ts                 calls the backend; converts field names, ids, URLs
+```
+
+## AI assistance
+
+I (Kathleen Collier) used Claude Opus 5.5 (medium effort) as a learning and coding assistant on CHUD-15:
+
+- **Zod validation:** Zod was new to me. Claude explained how schemas, `.refine()`, and
+  regex checks work, and reviewed my validation code and tests while I wrote them.
+- **Front-end styling:** Claude helped restyle the forms to match the Figma mockups
+  approved by Aesire LLC.
+- **Code and tests:** Claude generated parts of the forms, the flag confirmation dialog,
+  the API client, and tests. I reviewed, ran, and tested all of it before committing.
+
+Requirements, field decisions, team coordination, and final testing were done by me.
