@@ -6,7 +6,7 @@ import { insertRow, one, updateRow, withTransaction, type Queryable } from "../d
 import { HttpError } from "../errors.ts";
 import { notFound, readJson } from "../http.ts";
 import { parseFields, parseId, parsePage, parseUpdate, type Parsed, type Schema } from "../validate.ts";
-import { applyWebsiteChange, parseDiscovery, saveDiscoveryResult } from "../website.ts";
+import { applyWebsiteChange, parseDiscovery, rejectCandidates, saveDiscoveryResult } from "../website.ts";
 
 const ORGANIZATION_FIELDS: Schema = {
   domain_id: { type: "int", required: true },
@@ -133,6 +133,17 @@ export function organizationRoutes(pool: Pool) {
       if (Object.keys(fields).length > 0) {
         await updateRow(db, "organization", "organization_id", id, fields, actor);
       }
+      return getOrganization(db, id);
+    });
+    return c.json(organization);
+  });
+
+  // "None of these suggestions is right" (review screen). Keeps an existing website, or marks NOT_FOUND.
+  routes.post("/organizations/:id/website/reject-candidates", async (c) => {
+    const actor = c.get("actor");
+    const id = parseId(c.req.param("id"));
+    const organization = await withTransaction(pool, actor, async (db) => {
+      await rejectCandidates(db, actor, id);
       return getOrganization(db, id);
     });
     return c.json(organization);

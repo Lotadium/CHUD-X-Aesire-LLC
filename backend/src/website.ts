@@ -9,6 +9,7 @@ import { collectFields, failIfInvalid, type Parsed, type Schema } from "./valida
  * endpoint and the general organization edit, so they can never disagree.
  *
  * - A URL that is already set is never replaced (or cleared) unless the caller confirms.
+ * - Sending the URL the entity already has changes the URL not at all, but settles a pending review.
  * - A change is recorded as a manual one: source MANUAL, status FOUND, and the time it changed.
  *   Clearing the URL puts the entity back to NOT_SEARCHED.
  * - Any candidate URLs waiting for review are dropped, because a person has now decided.
@@ -24,9 +25,9 @@ export async function applyWebsiteChange(
   confirmOverwrite: boolean,
 ): Promise<void> {
   // Lock the row so two people changing the URL at once cannot both pass the check.
-  const current = await one<{ website_url: string | null }>(
+  const current = await one<{ website_url: string | null; website_status: string }>(
     db,
-    "SELECT website_url FROM organization WHERE organization_id = $1 FOR UPDATE",
+    "SELECT website_url, website_status FROM organization WHERE organization_id = $1 FOR UPDATE",
     [organizationId],
   );
   if (!current) throw notFound("Organization");
@@ -35,7 +36,13 @@ export async function applyWebsiteChange(
   const next = fields.website_url as string | null;
 
   if (next === existing) {
-    delete fields.website_url; // nothing to change
+    delete fields.website_url; // the URL itself does not change
+    // Keeping the URL the entity already has also settles a pending review: it is FOUND again
+    // and the suggestions that were waiting are dropped.
+    if (existing && current.website_status !== "FOUND") {
+      fields.website_status = "FOUND";
+      await db.query("DELETE FROM website_candidate WHERE organization_id = $1", [organizationId]);
+    }
     return;
   }
 
@@ -183,4 +190,33 @@ export async function saveDiscoveryResult(
     }
   }
   return result;
+}
+
+/**
+ * Reject every suggestion waiting for review ("none of these is right").
+ * An entity that already has a website keeps it and goes back to FOUND; one that has none is NOT_FOUND.
+ * Only allowed while there is something to reject.
+ */
+export async function rejectCandidates(db: Queryable, actor: Actor, organizationId: number): Promise<void> {
+  const current = await one<{ website_url: string | null; website_status: string }>(
+    db,
+    "SELECT website_url, website_status FROM organization WHERE organization_id = $1 FOR UPDATE",
+    [organizationId],
+  );
+  if (!current) throw notFound("Organization");
+
+  const waiting = await one(db, "SELECT 1 FROM website_candidate WHERE organization_id = $1", [organizationId]);
+  if (current.website_status !== "NEEDS_REVIEW" && !waiting) {
+    throw new HttpError(409, "This entity has no website suggestions to reject.");
+  }
+
+  await db.query("DELETE FROM website_candidate WHERE organization_id = $1", [organizationId]);
+  await updateRow(
+    db,
+    "organization",
+    "organization_id",
+    organizationId,
+    { website_status: current.website_url ? "FOUND" : "NOT_FOUND" },
+    actor,
+  );
 }

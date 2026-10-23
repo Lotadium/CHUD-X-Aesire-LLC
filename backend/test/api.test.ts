@@ -700,4 +700,95 @@ describe("CHUD API", { skip }, () => {
       assert.equal(bad.status, 400);
     });
   });
+
+  describe("review fixes (stuck review queue, existing websites)", () => {
+    let domain: number;
+    const create = async (name: string) =>
+      (await call("POST", "/api/organizations", { domain_id: domain, name })).body.organization_id as number;
+    const discover = (id: number, body: unknown) => call("POST", `/api/organizations/${id}/website/discovery`, body);
+    const reject = (id: number) => call("POST", `/api/organizations/${id}/website/reject-candidates`);
+
+    before(async () => {
+      domain = (await call("POST", "/api/domains", { name: "Transit Review" })).body.domain_id;
+    });
+
+    it("keeping the current website settles a pending review and drops the suggestions", async () => {
+      const id = await create("Stuck Entity");
+      await call("PUT", `/api/organizations/${id}/website`, { url: "https://original.example" });
+      const suggested = await discover(id, {
+        confidence: "low",
+        candidates: [{ url: "https://other.example" }],
+        confirm_overwrite: true,
+      });
+      assert.equal(suggested.body.organization.website_status, "NEEDS_REVIEW");
+      assert.equal(suggested.body.organization.website_candidates.length, 1);
+
+      const kept = await call("PUT", `/api/organizations/${id}/website`, { url: "https://original.example" });
+      assert.equal(kept.status, 200);
+      assert.equal(kept.body.website_url, "https://original.example");
+      assert.equal(kept.body.website_status, "FOUND");
+      assert.deepEqual(kept.body.website_candidates, []);
+      assert.equal(kept.body.website_source, "MANUAL");
+    });
+
+    it("rejecting all suggestions on an entity with a website keeps the website", async () => {
+      const id = await create("Has Website");
+      await call("PUT", `/api/organizations/${id}/website`, { url: "https://keep.example" });
+      await discover(id, { confidence: "low", candidates: [{ url: "https://nope.example" }], confirm_overwrite: true });
+
+      const res = await reject(id);
+      assert.equal(res.status, 200);
+      assert.equal(res.body.website_url, "https://keep.example");
+      assert.equal(res.body.website_status, "FOUND");
+      assert.deepEqual(res.body.website_candidates, []);
+    });
+
+    it("rejecting all suggestions on an entity without a website marks it not found", async () => {
+      const id = await create("No Website");
+      await discover(id, {
+        confidence: "low",
+        candidates: [{ url: "https://a.example" }, { url: "https://b.example" }],
+      });
+      const res = await reject(id);
+      assert.equal(res.status, 200);
+      assert.equal(res.body.website_url, null);
+      assert.equal(res.body.website_status, "NOT_FOUND");
+      assert.deepEqual(res.body.website_candidates, []);
+      assert.equal(res.body.updated_by_type, "USER", "a person rejected them");
+    });
+
+    it("refuses to reject when nothing is waiting, and handles unknown or bad ids", async () => {
+      const id = await create("Nothing Waiting");
+      const res = await reject(id);
+      assert.equal(res.status, 409);
+      assert.match(res.body.error, /no website suggestions/);
+      assert.equal((await call("GET", `/api/organizations/${id}`)).body.website_status, "NOT_SEARCHED");
+      assert.equal((await reject(99999)).status, 404);
+      assert.equal((await call("POST", "/api/organizations/abc/website/reject-candidates")).status, 400);
+    });
+
+    it("the website SQL labels entities that already had a website, and is safe to run twice", async () => {
+      const sql = readFileSync(new URL("../../DataBase/database_add_website_discovery.sql", import.meta.url), "utf8");
+      const had = await create("Had A Website Before");
+      const review = await create("Already In Review");
+      // Rows as they looked before the script ran: a URL, but the default status.
+      await pool.query("UPDATE organization SET website_url = 'https://before.example' WHERE organization_id = $1", [had]);
+      await pool.query(
+        "UPDATE organization SET website_url = 'https://r.example', website_status = 'NEEDS_REVIEW' WHERE organization_id = $1",
+        [review],
+      );
+
+      await pool.query(sql);
+      let rows = (await pool.query("SELECT organization_id, website_status, website_source FROM organization WHERE organization_id = ANY($1)", [[had, review]])).rows;
+      const byId = Object.fromEntries(rows.map((r) => [r.organization_id, r]));
+      assert.equal(byId[had].website_status, "FOUND");
+      assert.equal(byId[had].website_source, "MANUAL");
+      assert.equal(byId[review].website_status, "NEEDS_REVIEW", "other statuses are left alone");
+
+      const versionBefore = (await pool.query("SELECT version FROM organization WHERE organization_id = $1", [had])).rows[0].version;
+      await pool.query(sql); // second run changes nothing
+      const versionAfter = (await pool.query("SELECT version FROM organization WHERE organization_id = $1", [had])).rows[0].version;
+      assert.equal(versionAfter, versionBefore);
+    });
+  });
 });

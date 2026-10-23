@@ -17,3 +17,9 @@ CREATE TABLE IF NOT EXISTS website_candidate (
     UNIQUE (organization_id, url)
 );
 CREATE INDEX IF NOT EXISTS website_candidate_org_idx ON website_candidate (organization_id);
+
+-- Backfill: entities that already had a website before this script ran are FOUND, not NOT_SEARCHED.
+-- Safe to run more than once: it only touches rows still at the default status.
+UPDATE organization
+SET website_status = 'FOUND', website_source = 'MANUAL'
+WHERE website_url IS NOT NULL AND website_status = 'NOT_SEARCHED';

@@ -111,6 +111,7 @@ curl -X PUT http://localhost:8787/api/organizations/1 -H "Content-Type: applicat
 | PUT/PATCH | `/api/organizations/:id` | Any of `domain_id`, `name`, `website_url`, `is_flagged`, `flag_reason`. Changing `website_url` follows the website rules below |
 | PUT | `/api/organizations/:id/website` | Set the website by hand: `{ url, confirm_overwrite? }` |
 | POST | `/api/organizations/:id/website/discovery` | Save a website-discovery result (see below) |
+| POST | `/api/organizations/:id/website/reject-candidates` | "None of these suggestions is right" (no body). Keeps an existing website (back to `FOUND`) or marks `NOT_FOUND`. 409 if nothing is waiting |
 
 ### Contacts (people)
 
@@ -157,6 +158,12 @@ Saves it as `FOUND` / `MANUAL` and drops any candidates waiting for review. The 
 - **A website that is already set is never replaced or cleared without confirmation.** Send `confirm_overwrite: true`,
   or the API answers 409 with the existing URL. This applies to the website endpoint, to discovery results and to
   `website_url` in the general organization edit. Finding the same URL again changes nothing.
+- Sending the website an entity already has (`PUT .../website` or the general edit) leaves the URL as it is, but settles
+  a pending review: status goes back to `FOUND` and the waiting suggestions are dropped.
+- **Reject all suggestions:** `POST .../website/reject-candidates` clears the candidates. The entity keeps its website
+  (`FOUND`) or, if it has none, becomes `NOT_FOUND`. Use it when a reviewer says "none of these is right".
+- Entities that already had a website when `database_add_website_discovery.sql` was run are set to `FOUND` / `MANUAL`
+  by the script itself (it only touches rows still at `NOT_SEARCHED`, so running it twice is safe).
 - The previous URL stays in `record_history`.
 - Review screen: `GET /api/organizations?website_status=NEEDS_REVIEW` lists the entities to review, with candidates and
   a `total`. Picking one is `PUT .../website` with its URL.
