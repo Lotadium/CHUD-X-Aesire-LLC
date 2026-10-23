@@ -1,9 +1,10 @@
-// AI use: written by Claude (Claude Code, Sonnet 5.5) at Irene Riva's direction. See "AI use" in backend/README.md.
+// AI use: written with AI help from Claude Code (Sonnet 5.5), directed by Irene Riva. See "AI use" in backend/README.md.
 import { HttpError, type FieldErrors } from "./errors.ts";
 
 export type Rule =
   | { type: "string"; max: number; required?: boolean; format?: "email" | "url" }
   | { type: "int"; required?: boolean }
+  | { type: "number"; min?: number; max?: number; required?: boolean }
   | { type: "bool"; required?: boolean };
 
 export type Schema = Record<string, Rule>;
@@ -26,6 +27,12 @@ function checkValue(raw: unknown, rule: Rule): Checked {
       if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 1 || raw > 2147483647) {
         return { error: "must be a positive whole number" };
       }
+      return { value: raw };
+    }
+    case "number": {
+      if (typeof raw !== "number" || !Number.isFinite(raw)) return { error: "must be a number" };
+      if (rule.min !== undefined && raw < rule.min) return { error: `must be at least ${rule.min}` };
+      if (rule.max !== undefined && raw > rule.max) return { error: `must be at most ${rule.max}` };
       return { value: raw };
     }
     case "bool": {

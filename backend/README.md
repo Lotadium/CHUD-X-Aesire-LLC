@@ -31,7 +31,8 @@ it defaults to any origin for development.
 
 ## Test it
 
-The tests run against a **throwaway local Postgres** loaded with the schema file. They wipe the
+The tests run against a **throwaway local Postgres** built from the schema files in `DataBase/` (the base schema, then the
+flag and website-discovery add-ons). They wipe the
 database each run, so they refuse to run against Neon or any database without `test` in its name.
 
 ```bash
@@ -104,10 +105,12 @@ curl -X PUT http://localhost:8787/api/organizations/1 -H "Content-Type: applicat
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/organizations` | Optional `?domain_id=`. Each row includes `domain_name` |
+| GET | `/api/organizations` | Optional `?domain_id=` and `?website_status=` (NOT_SEARCHED, FOUND, NEEDS_REVIEW, NOT_FOUND). Each row includes `domain_name`, the website fields and `website_candidates` |
 | POST | `/api/organizations` | `{ domain_id, name, website_url? }` |
 | GET | `/api/organizations/:id` | Includes `contacts`: the people who work there |
-| PUT/PATCH | `/api/organizations/:id` | Any of `domain_id`, `name`, `website_url`, `is_flagged`, `flag_reason` |
+| PUT/PATCH | `/api/organizations/:id` | Any of `domain_id`, `name`, `website_url`, `is_flagged`, `flag_reason`. Changing `website_url` follows the website rules below |
+| PUT | `/api/organizations/:id/website` | Set the website by hand: `{ url, confirm_overwrite? }` |
+| POST | `/api/organizations/:id/website/discovery` | Save a website-discovery result (see below) |
 
 ### Contacts (people)
 
@@ -124,6 +127,39 @@ curl -X PUT http://localhost:8787/api/organizations/1 -H "Content-Type: applicat
 
 Person fields: `prefix`, `first_name` (required), `middle_name`, `last_name` (required), `suffix`,
 `linkedin_url`.
+
+## Website discovery (CHUD-30)
+
+Each organization has `website_url` plus: `website_status` (`NOT_SEARCHED` by default, `FOUND`, `NEEDS_REVIEW` or
+`NOT_FOUND`), `website_source` (`AUTO` or `MANUAL`), `website_updated_at`, and `website_candidates` (up to 3
+`{ candidate_id, url, page_title, score, rank }`, best first, or an empty list). These come from
+`DataBase/database_add_website_discovery.sql`.
+
+**Set by hand** (entity page, review screen):
+
+```bash
+curl -X PUT http://localhost:8787/api/organizations/1/website -H "Content-Type: application/json" -H "X-User: irene" \
+  -d '{ "url": "https://example.org" }'
+```
+
+Saves it as `FOUND` / `MANUAL` and drops any candidates waiting for review. The URL must be http or https.
+
+**Save a discovery result** (called after the search and ranking steps). The response is
+`{ "result": ..., "organization": {...} }`:
+
+| Body | Effect | `result` |
+|---|---|---|
+| `{ "confidence": "high", "url": "https://…" }` | Saves the URL: `FOUND` / `AUTO` | `saved` |
+| `{ "confidence": "low", "candidates": [{ "url", "page_title"?, "score"? }, …] }` (1 to 3, best first) | Does **not** save a URL. Status `NEEDS_REVIEW`, candidates stored (a new search replaces the old ones) | `needs_review` |
+| `{ "confidence": "none" }` | Status `NOT_FOUND`, candidates cleared. Send this only when the search worked and found nothing usable, not when it failed | `no_match` |
+
+- Automatic results are recorded as `REFRESH` (not as a person's edit) in `updated_by_type` and in the history.
+- **A website that is already set is never replaced or cleared without confirmation.** Send `confirm_overwrite: true`,
+  or the API answers 409 with the existing URL. This applies to the website endpoint, to discovery results and to
+  `website_url` in the general organization edit. Finding the same URL again changes nothing.
+- The previous URL stays in `record_history`.
+- Review screen: `GET /api/organizations?website_status=NEEDS_REVIEW` lists the entities to review, with candidates and
+  a `total`. Picking one is `PUT .../website` with its URL.
 
 ### Example
 
@@ -154,11 +190,12 @@ backend/
 ## AI use
 
 - **AI used:** Yes.
-- **Tool and model:** Claude, through Claude Code (model: Claude Sonnet 5.5).
-- **What it did:** Claude wrote the code in `backend/` (routes, validation, error handling, database helpers), the
-  integration tests, and this README, working from Irene's requests, Ryan's schema (`DataBase/database_schema.sql`),
-  and Neon's documentation. It also made the later change from deleting records to flagging them.
-- **What Irene did:** directed the work, ran the API against a Neon dev branch, and checked the results by hand.
+- **Tool and model:** Claude Code (Sonnet 5.5).
+- **How it was made:** written with AI help from Claude Code, directed by Irene Riva. Working from Irene's requests,
+  Ryan's schema (`DataBase/database_schema.sql`) and Neon's documentation, Claude Code wrote the code in `backend/`
+  (routes, validation, error handling, database helpers), the integration tests and this README. That includes the
+  change from deleting records to flagging them, and for CHUD-30 the website endpoints with overwrite protection
+  (`src/website.ts`). Irene directed the work, ran the API against a Neon dev branch, and checked the results by hand.
 - **Peer review:** pending, in the pull request.
 
-The same note is at the top of each source file.
+Every source file starts with a short AI-use note that points here.

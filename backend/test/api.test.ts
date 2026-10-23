@@ -1,4 +1,4 @@
-// AI use: written by Claude (Claude Code, Sonnet 5.5) at Irene Riva's direction. See "AI use" in backend/README.md.
+// AI use: written with AI help from Claude Code (Sonnet 5.5), directed by Irene Riva. See "AI use" in backend/README.md.
 // Integration tests: they run the real API against a THROWAWAY Postgres database
 // that is loaded with DataBase/database_schema.sql.
 //
@@ -40,15 +40,13 @@ describe("CHUD API", { skip }, () => {
 
   before(async () => {
     await pool.query("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
-    await pool.query(readFileSync(new URL("../../DataBase/database_schema.sql", import.meta.url), "utf8"));
-    // Records are flagged instead of deleted. These columns are owned by the schema (CHUD-10);
-    // adding them here with IF NOT EXISTS keeps the tests passing before and after that change.
-    for (const table of ["organization", "person", '"position"', "email"]) {
-      await pool.query(
-        `ALTER TABLE ${table}
-           ADD COLUMN IF NOT EXISTS is_flagged boolean NOT NULL DEFAULT false,
-           ADD COLUMN IF NOT EXISTS flag_reason varchar(500)`,
-      );
+    // Build the database the way the team does: the base schema, then each add-on file in order.
+    for (const file of [
+      "database_schema.sql",
+      "database_add_flag_columns.sql", // is_flagged / flag_reason (CHUD-10)
+      "database_add_website_discovery.sql", // website_status / website_source / candidates (CHUD-30)
+    ]) {
+      await pool.query(readFileSync(new URL(`../../DataBase/${file}`, import.meta.url), "utf8"));
     }
     const res = await call("POST", "/api/domains", { name: "Water" });
     domainId = res.body.domain_id;
@@ -121,7 +119,12 @@ describe("CHUD API", { skip }, () => {
     });
 
     it("updates only the fields sent and bumps the version", async () => {
-      const res = await call("PUT", `/api/organizations/${orgId}`, { website_url: null }, "someone-else");
+      const res = await call(
+        "PUT",
+        `/api/organizations/${orgId}`,
+        { website_url: null, confirm_overwrite: true }, // clearing an existing website needs confirmation
+        "someone-else",
+      );
       assert.equal(res.status, 200);
       assert.equal(res.body.website_url, null);
       assert.equal(res.body.name, "Folsom Water District");
@@ -357,6 +360,344 @@ describe("CHUD API", { skip }, () => {
       assert.deepEqual(rows.map((r) => r.flagged), ["false", "false", "true", "false"]);
       assert.equal(rows[2].changed_by, "tester");
       assert.equal(rows[3].changed_by, "reviewer");
+    });
+  });
+
+  describe("website (manual)", () => {
+    let eduId: number;
+    let orgId: number;
+    const first = "https://www.example.edu/";
+    const second = "https://example.edu/home";
+
+    before(async () => {
+      eduId = (await call("POST", "/api/domains", { name: "Education" })).body.domain_id;
+      orgId = (await call("POST", "/api/organizations", { domain_id: eduId, name: "Sample School District" })).body
+        .organization_id;
+    });
+
+    it("starts with no website and the default status", async () => {
+      const org = (await call("GET", `/api/organizations/${orgId}`)).body;
+      assert.equal(org.website_url, null);
+      assert.equal(org.website_status, "NOT_SEARCHED");
+      assert.equal(org.website_source, null);
+      assert.equal(org.website_updated_at, null);
+    });
+
+    it("rejects a missing or malformed URL", async () => {
+      for (const body of [{}, { url: "not a url" }, { url: "ftp://example.edu" }, { url: "javascript:alert(1)" }]) {
+        const res = await call("PUT", `/api/organizations/${orgId}/website`, body);
+        assert.equal(res.status, 400, JSON.stringify(body));
+        assert.ok(res.body.fields.url, JSON.stringify(body));
+      }
+    });
+
+    it("sets the website and records that a person set it", async () => {
+      const res = await call("PUT", `/api/organizations/${orgId}/website`, { url: first });
+      assert.equal(res.status, 200);
+      assert.equal(res.body.website_url, first);
+      assert.equal(res.body.website_status, "FOUND");
+      assert.equal(res.body.website_source, "MANUAL");
+      assert.ok(res.body.website_updated_at);
+      assert.equal(res.body.updated_by, "tester");
+    });
+
+    it("does not replace an existing website unless the caller confirms", async () => {
+      const refused = await call("PUT", `/api/organizations/${orgId}/website`, { url: second });
+      assert.equal(refused.status, 409);
+      assert.match(refused.body.error, /already has a website/);
+      assert.match(refused.body.error, /www\.example\.edu/);
+      assert.equal((await call("GET", `/api/organizations/${orgId}`)).body.website_url, first);
+
+      const confirmed = await call("PUT", `/api/organizations/${orgId}/website`, {
+        url: second,
+        confirm_overwrite: true,
+      });
+      assert.equal(confirmed.status, 200);
+      assert.equal(confirmed.body.website_url, second);
+    });
+
+    it("keeps the previous URL in the record history", async () => {
+      const { rows } = await pool.query(
+        `SELECT row_data->>'website_url' AS url FROM record_history
+         WHERE table_name = 'organization' AND row_id = $1 ORDER BY history_id`,
+        [orgId],
+      );
+      assert.ok(rows.map((r) => r.url).includes(first), "the first URL is still in the history");
+    });
+
+    it("accepts the same URL again without a confirmation and without a new version", async () => {
+      const before = (await call("GET", `/api/organizations/${orgId}`)).body;
+      const res = await call("PUT", `/api/organizations/${orgId}/website`, { url: second });
+      assert.equal(res.status, 200);
+      assert.equal(res.body.version, before.version);
+    });
+
+    it("drops waiting candidate URLs when a person sets the website", async () => {
+      const other = (await call("POST", "/api/organizations", { domain_id: eduId, name: "Other School District" })).body
+        .organization_id;
+      await pool.query(
+        "INSERT INTO website_candidate (organization_id, url, rank) VALUES ($1, 'https://a.example', 1), ($1, 'https://b.example', 2)",
+        [other],
+      );
+      await call("PUT", `/api/organizations/${other}/website`, { url: "https://a.example" });
+      const left = await pool.query("SELECT count(*)::int AS n FROM website_candidate WHERE organization_id = $1", [
+        other,
+      ]);
+      assert.equal(left.rows[0].n, 0);
+    });
+
+    it("returns 400 for a bad id and 404 for an unknown entity", async () => {
+      assert.equal((await call("PUT", "/api/organizations/abc/website", { url: first })).status, 400);
+      assert.equal((await call("PUT", "/api/organizations/99999/website", { url: first })).status, 404);
+    });
+
+    it("applies the same rules when the website is edited through the general organization edit", async () => {
+      const refused = await call("PUT", `/api/organizations/${orgId}`, { website_url: first });
+      assert.equal(refused.status, 409);
+
+      const changed = await call("PUT", `/api/organizations/${orgId}`, { website_url: first, confirm_overwrite: true });
+      assert.equal(changed.status, 200);
+      assert.equal(changed.body.website_url, first);
+      assert.equal(changed.body.website_source, "MANUAL");
+    });
+
+    it("leaves the website fields alone when an edit does not touch the website", async () => {
+      const before = (await call("GET", `/api/organizations/${orgId}`)).body;
+      const res = await call("PUT", `/api/organizations/${orgId}`, { name: "Sample School District (renamed)" });
+      assert.equal(res.status, 200);
+      assert.equal(res.body.name, "Sample School District (renamed)");
+      assert.equal(res.body.website_url, before.website_url);
+      assert.equal(res.body.website_updated_at, before.website_updated_at);
+    });
+
+    it("clearing a website needs confirmation and resets the status", async () => {
+      assert.equal((await call("PUT", `/api/organizations/${orgId}`, { website_url: null })).status, 409);
+      const cleared = await call("PUT", `/api/organizations/${orgId}`, { website_url: null, confirm_overwrite: true });
+      assert.equal(cleared.status, 200);
+      assert.equal(cleared.body.website_url, null);
+      assert.equal(cleared.body.website_status, "NOT_SEARCHED");
+      assert.equal(cleared.body.website_source, null);
+    });
+  });
+
+  describe("website candidates and the review list", () => {
+    let healthId: number;
+    let review: number;
+    let found: number;
+
+    before(async () => {
+      healthId = (await call("POST", "/api/domains", { name: "Health" })).body.domain_id;
+      review = (await call("POST", "/api/organizations", { domain_id: healthId, name: "Valley Health District" })).body
+        .organization_id;
+      found = (await call("POST", "/api/organizations", { domain_id: healthId, name: "Bay Health Authority" })).body
+        .organization_id;
+      // Step 4 will fill these in from website discovery; for now put them in directly.
+      await pool.query("UPDATE organization SET website_status = 'NEEDS_REVIEW' WHERE organization_id = $1", [review]);
+      await pool.query(
+        `INSERT INTO website_candidate (organization_id, url, page_title, score, rank)
+         VALUES ($1, 'https://second.example', 'Second choice', 41.5, 2),
+                ($1, 'https://first.example', 'First choice', 78.25, 1)`,
+        [review],
+      );
+      await call("PUT", `/api/organizations/${found}/website`, { url: "https://bayhealth.example" });
+    });
+
+    it("shows the candidates, best first, on the entity", async () => {
+      const org = (await call("GET", `/api/organizations/${review}`)).body;
+      assert.equal(org.website_status, "NEEDS_REVIEW");
+      assert.equal(org.website_url, null);
+      assert.deepEqual(
+        org.website_candidates.map((c: { url: string; rank: number }) => [c.rank, c.url]),
+        [
+          [1, "https://first.example"],
+          [2, "https://second.example"],
+        ],
+      );
+      assert.equal(org.website_candidates[0].page_title, "First choice");
+      assert.equal(org.website_candidates[0].score, 78.25);
+    });
+
+    it("gives an empty candidate list when there are none", async () => {
+      const org = (await call("GET", `/api/organizations/${found}`)).body;
+      assert.deepEqual(org.website_candidates, []);
+      assert.equal(org.website_status, "FOUND");
+    });
+
+    it("lists only entities that need review, with their candidates and a total", async () => {
+      const res = await call("GET", "/api/organizations?website_status=NEEDS_REVIEW");
+      assert.equal(res.status, 200);
+      assert.equal(res.body.total, 1);
+      assert.equal(res.body.data[0].organization_id, review);
+      assert.equal(res.body.data[0].website_candidates.length, 2);
+    });
+
+    it("combines the status filter with the domain filter", async () => {
+      const here = await call("GET", `/api/organizations?domain_id=${healthId}&website_status=FOUND`);
+      assert.deepEqual(here.body.data.map((o: { organization_id: number }) => o.organization_id), [found]);
+      const none = await call("GET", `/api/organizations?domain_id=${healthId}&website_status=NOT_FOUND`);
+      assert.equal(none.body.total, 0);
+    });
+
+    it("rejects a status that does not exist", async () => {
+      const res = await call("GET", "/api/organizations?website_status=MAYBE");
+      assert.equal(res.status, 400);
+      assert.match(res.body.error, /NEEDS_REVIEW/);
+    });
+  });
+
+  describe("website (automatic discovery)", () => {
+    let safetyId: number;
+    const found = "https://www.fireoffice.example/";
+    const create = async (name: string) =>
+      (await call("POST", "/api/organizations", { domain_id: safetyId, name })).body.organization_id as number;
+    const discover = (id: number, body: unknown, user = "finder") =>
+      call("POST", `/api/organizations/${id}/website/discovery`, body, user);
+    const candidates = [
+      { url: "https://one.example", page_title: "One", score: 80 },
+      { url: "https://two.example", page_title: "Two", score: 55.5 },
+      { url: "https://three.example" },
+    ];
+
+    before(async () => {
+      safetyId = (await call("POST", "/api/domains", { name: "Public Safety" })).body.domain_id;
+    });
+
+    it("saves a high-confidence URL as an automatic change", async () => {
+      const id = await create("Metro Fire District");
+      const res = await discover(id, { confidence: "high", url: found });
+      assert.equal(res.status, 200);
+      assert.equal(res.body.result, "saved");
+      const org = res.body.organization;
+      assert.equal(org.website_url, found);
+      assert.equal(org.website_status, "FOUND");
+      assert.equal(org.website_source, "AUTO");
+      assert.ok(org.website_updated_at);
+      assert.equal(org.updated_by_type, "REFRESH");
+      assert.equal(org.updated_by, "finder");
+      assert.deepEqual(org.website_candidates, []);
+    });
+
+    it("records the change as automatic in the history", async () => {
+      const id = await create("Harbor Fire District");
+      await discover(id, { confidence: "high", url: found });
+      const { rows } = await pool.query(
+        `SELECT changed_by_type FROM record_history
+         WHERE table_name = 'organization' AND row_id = $1 ORDER BY history_id DESC LIMIT 1`,
+        [id],
+      );
+      assert.equal(rows[0].changed_by_type, "REFRESH");
+    });
+
+    it("keeps low-confidence candidates for review without saving a URL", async () => {
+      const id = await create("Ridge Police Authority");
+      const res = await discover(id, { confidence: "low", candidates });
+      assert.equal(res.status, 200);
+      assert.equal(res.body.result, "needs_review");
+      const org = res.body.organization;
+      assert.equal(org.website_url, null);
+      assert.equal(org.website_status, "NEEDS_REVIEW");
+      assert.deepEqual(
+        org.website_candidates.map((c: { rank: number; url: string }) => [c.rank, c.url]),
+        [
+          [1, "https://one.example"],
+          [2, "https://two.example"],
+          [3, "https://three.example"],
+        ],
+      );
+      assert.equal(org.website_candidates[1].score, 55.5);
+    });
+
+    it("replaces the old candidates when it searches again", async () => {
+      const id = await create("Delta Sheriff Office");
+      await discover(id, { confidence: "low", candidates });
+      const again = await discover(id, { confidence: "low", candidates: [{ url: "https://new.example" }] });
+      assert.deepEqual(
+        again.body.organization.website_candidates.map((c: { url: string }) => c.url),
+        ["https://new.example"],
+      );
+    });
+
+    it("records no match and clears stale candidates", async () => {
+      const id = await create("Lakeside Rescue");
+      await discover(id, { confidence: "low", candidates });
+      const res = await discover(id, { confidence: "none" });
+      assert.equal(res.body.result, "no_match");
+      assert.equal(res.body.organization.website_status, "NOT_FOUND");
+      assert.deepEqual(res.body.organization.website_candidates, []);
+    });
+
+    it("does not touch an entity that already has a website unless confirmed", async () => {
+      const id = await create("Summit Emergency Services");
+      await call("PUT", `/api/organizations/${id}/website`, { url: "https://summit.example" });
+
+      for (const body of [
+        { confidence: "high", url: found },
+        { confidence: "low", candidates },
+        { confidence: "none" },
+      ]) {
+        const refused = await discover(id, body);
+        assert.equal(refused.status, 409, JSON.stringify(body));
+        assert.match(refused.body.error, /summit\.example/);
+      }
+      const org = (await call("GET", `/api/organizations/${id}`)).body;
+      assert.equal(org.website_url, "https://summit.example");
+      assert.equal(org.website_status, "FOUND");
+      assert.deepEqual(org.website_candidates, []);
+
+      const confirmed = await discover(id, { confidence: "high", url: found, confirm_overwrite: true });
+      assert.equal(confirmed.body.result, "saved");
+      assert.equal(confirmed.body.organization.website_url, found);
+      assert.equal(confirmed.body.organization.website_source, "AUTO");
+    });
+
+    it("does nothing when it finds the URL the entity already has", async () => {
+      const id = await create("Canyon Fire Protection");
+      await call("PUT", `/api/organizations/${id}/website`, { url: found });
+      const before = (await call("GET", `/api/organizations/${id}`)).body;
+      const res = await discover(id, { confidence: "high", url: found });
+      assert.equal(res.status, 200);
+      assert.equal(res.body.result, "unchanged");
+      assert.equal(res.body.organization.version, before.version);
+      assert.equal(res.body.organization.website_source, "MANUAL", "a person's choice stays a person's choice");
+    });
+
+    it("lets a person pick a candidate afterwards", async () => {
+      const id = await create("Prairie Water Safety");
+      await discover(id, { confidence: "low", candidates });
+      const picked = await call("PUT", `/api/organizations/${id}/website`, { url: "https://two.example" });
+      assert.equal(picked.status, 200);
+      assert.equal(picked.body.website_status, "FOUND");
+      assert.equal(picked.body.website_source, "MANUAL");
+      assert.deepEqual(picked.body.website_candidates, []);
+    });
+
+    it("checks what it is sent", async () => {
+      const id = await create("Validation Test District");
+      const cases: [unknown, string][] = [
+        [{}, "confidence"],
+        [{ confidence: "maybe" }, "confidence"],
+        [{ confidence: "high" }, "url"],
+        [{ confidence: "high", url: "ftp://x.example" }, "url"],
+        [{ confidence: "low" }, "candidates"],
+        [{ confidence: "low", candidates: [] }, "candidates"],
+        [{ confidence: "low", candidates: [...candidates, { url: "https://four.example" }] }, "candidates"],
+        [{ confidence: "low", candidates: [{ url: "nope" }] }, "candidates[0].url"],
+        [{ confidence: "low", candidates: [{ url: "https://a.example", score: "high" }] }, "candidates[0].score"],
+        [{ confidence: "low", candidates: [{ url: "https://a.example" }, { url: "https://a.example" }] }, "candidates[1].url"],
+      ];
+      for (const [body, field] of cases) {
+        const res = await discover(id, body);
+        assert.equal(res.status, 400, JSON.stringify(body));
+        assert.ok(res.body.fields[field], `${JSON.stringify(body)} should flag ${field}`);
+      }
+      const org = (await call("GET", `/api/organizations/${id}`)).body;
+      assert.equal(org.website_status, "NOT_SEARCHED", "bad requests change nothing");
+    });
+
+    it("returns 400 for a bad id and 404 for an unknown entity", async () => {
+      assert.equal((await discover(99999, { confidence: "none" })).status, 404);
+      const bad = await call("POST", "/api/organizations/abc/website/discovery", { confidence: "none" });
+      assert.equal(bad.status, 400);
     });
   });
 });
