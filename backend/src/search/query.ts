@@ -3,8 +3,8 @@ import type { SearchOperators } from "./provider.ts";
 export type SearchContext = {
   firstName: string;
   lastName: string;
-  organizationName: string;
 
+  organizationName?: string;
   middleName?: string;
   nameSuffix?: string;
   title?: string;
@@ -15,7 +15,7 @@ export type SearchContext = {
   state?: string;
 };
 
-/** Builds a web search query from context data to give to a search provider */
+/** builds a web search query from context data to give to a search provider */
 export function queryBuilder(context: SearchContext, providerOperators: SearchOperators): string {
   const name: string = [
     context.firstName,
@@ -25,8 +25,9 @@ export function queryBuilder(context: SearchContext, providerOperators: SearchOp
   ].filter(Boolean).join(" ");
   const job: string = [
     context.title,
+    context.organizationName,
     context.departmentName,
-    context?.organizationDomain ? providerOperators?.domain?.(context?.organizationDomain) : null,
+    context.organizationDomain ? providerOperators?.domain?.(context?.organizationDomain) : null,
   ].filter(Boolean).join(" ");
   const location: string = [
     context.city,
