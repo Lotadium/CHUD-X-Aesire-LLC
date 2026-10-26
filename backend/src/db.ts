@@ -1,4 +1,4 @@
-// AI use: written by Claude (Claude Code, Sonnet 5.5) at Irene Riva's direction. See "AI use" in backend/README.md.
+// AI use: written with AI help from Claude Code (Sonnet 5.5), directed by Irene Riva. See "AI use" in backend/README.md.
 import type { Pool, PoolClient, QueryResultRow } from "pg";
 import type { Parsed } from "./validate.ts";
 
@@ -71,8 +71,9 @@ export async function updateRow<T extends QueryResultRow>(
   id: number,
   fields: Parsed,
   actor: Actor,
+  changedBy: "USER" | "REFRESH" = "USER", // REFRESH marks a change made automatically, not by a person
 ): Promise<T | undefined> {
-  const entries = [...Object.entries(fields), ["updated_by_type", "USER"], ["updated_by", actor.name]] as const;
+  const entries = [...Object.entries(fields), ["updated_by_type", changedBy], ["updated_by", actor.name]] as const;
   const assignments = entries.map(([column], i) => `${column} = $${i + 1}`);
   const values = [...entries.map(([, value]) => value), id];
   const { rows } = await db.query<T>(
