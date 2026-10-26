@@ -2,6 +2,7 @@ import { test, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import OrganizationEditForm from "./OrganizationEditForm";
+import { toHref } from "../lib/website";
 
 test("pre-fills the form with the existing organization", async () => {
   render(<OrganizationEditForm id="1" />);
@@ -124,19 +125,57 @@ test("the link only changes after saving, then shows 'Entered manually'; clearin
   expect(screen.getByText("Entered manually")).toBeInTheDocument();
   expect(screen.getByText(/^Updated /)).toBeInTheDocument();
 
+  // Removing a saved website asks first (Irene's CHUD-30 rule), then shows "No website yet"
   await user.clear(website);
   await user.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(screen.getByRole("heading", { name: "Remove the website on file?" })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Remove website" }));
   expect(await screen.findByText("No website yet")).toBeInTheDocument();
   expect(screen.queryByRole("link")).not.toBeInTheDocument();
 });
 
+test("replacing a saved website asks first; Cancel keeps the old one", async () => {
+  const user = userEvent.setup();
+  render(<OrganizationEditForm id="1" />);
+  const website = await screen.findByLabelText(/Website/);
+  await user.clear(website);
+  await user.type(website, "www.metrofire.org");
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+  expect(screen.getByRole("heading", { name: "Replace the website on file?" })).toBeInTheDocument();
+  expect(screen.getByText(/metrofire\.ca\.gov will be replaced with www\.metrofire\.org/)).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: /metrofire\.ca\.gov/ })).toBeInTheDocument();
+  const { getOrganization } = await import("../lib/api");
+  expect((await getOrganization("1")).websiteUrl).toBe("https://metrofire.ca.gov/"); // not saved
+
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await user.click(screen.getByRole("button", { name: "Replace website" }));
+  expect(await screen.findByRole("link", { name: /www\.metrofire\.org/ })).toBeInTheDocument();
+  expect(screen.getByText("Entered manually")).toBeInTheDocument();
+});
+
+test("saving without touching the website doesn't ask about it", async () => {
+  const user = userEvent.setup();
+  render(<OrganizationEditForm id="2" />);
+  await screen.findByLabelText(/Entity Name/);
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(await screen.findByText("Changes saved")).toBeInTheDocument();
+  expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+});
+
 test("a bad website is not saved, and the link stays the same", async () => {
   const user = userEvent.setup();
+  const { getOrganization } = await import("../lib/api");
+  const before = (await getOrganization("1")).websiteUrl; // whatever earlier tests left saved
   render(<OrganizationEditForm id="1" />);
   const website = await screen.findByLabelText(/Website/);
   await user.clear(website);
   await user.type(website, "not a site");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   expect(screen.getByText(/Enter a website/)).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: /metrofire\.ca\.gov/ })).toBeInTheDocument();
+  expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(); // invalid input never gets as far as "Replace?"
+  expect(screen.getByRole("link")).toHaveAttribute("href", toHref(before)); // the link adds https:// when missing
+  expect((await getOrganization("1")).websiteUrl).toBe(before);
 });

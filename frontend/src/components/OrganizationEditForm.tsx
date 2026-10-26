@@ -2,8 +2,9 @@
 // See frontend/README.md → "AI assistance".
 
 import { useEffect, useState } from "react";
-import { getOrganization, updateOrganization, setOrganizationFlag, listDomains, type Organization, type WebsiteSource } from "../lib/api";
+import { getOrganization, updateOrganization, setOrganizationFlag, listDomains, type Organization, type WebsiteSource, type WebsiteStatusValue } from "../lib/api";
 import { organizationSchema } from "../lib/validation";
+import { displayUrl, sameWebsite } from "../lib/website";
 import ConfirmDialog from "./ConfirmDialog";
 import FormField, { SelectField } from "./FormField";
 import FlagReasonField from "./FlagReasonField";
@@ -20,12 +21,16 @@ type FormValues = { name: string; domainId: string; websiteUrl: string };
 type FieldName = keyof FormValues;
 
 // The website as last loaded/saved (CHUD-31), shown above the form fields
-type SavedWebsite = { url: string; source: WebsiteSource; updatedAt: string };
+type SavedWebsite = { url: string; source: WebsiteSource; updatedAt: string; status: WebsiteStatusValue; suggestions: number };
 const toSavedWebsite = (org: Organization): SavedWebsite => ({
   url: org.websiteUrl,
   source: org.websiteSource,
   updatedAt: org.websiteUpdatedAt,
+  status: org.websiteStatus,
+  suggestions: org.websiteSuggestions,
 });
+
+type Cleaned = { name: string; domainId: string; websiteUrl: string };
 
 // Run the Zod schema and turn its errors into { fieldName: "message" }
 function validate(values: FormValues): Partial<Record<FieldName, string>> {
@@ -59,7 +64,9 @@ export default function OrganizationEditForm({ id }: { id: string }) {
   const [flagReason, setFlagReason] = useState(""); // what the user types in the dialog
   const [flagging, setFlagging] = useState(false);
   const [savedName, setSavedName] = useState(""); // name as last loaded/saved, shown in the flag dialog
-  const [savedWebsite, setSavedWebsite] = useState<SavedWebsite>({ url: "", source: "", updatedAt: "" });
+  const [savedWebsite, setSavedWebsite] = useState<SavedWebsite>({ url: "", source: "", updatedAt: "", status: "", suggestions: 0 });
+  // Changes waiting for "Replace/Remove the website on file?" to be confirmed (CHUD-30 rule)
+  const [pendingSave, setPendingSave] = useState<Cleaned | null>(null);
 
   // Runs once when the form appears (and again if the id changes):
   // load the entity AND the domain list at the same time
@@ -105,11 +112,23 @@ export default function OrganizationEditForm({ id }: { id: string }) {
       return; // stop here if anything is invalid
     }
 
-    // Save: send the cleaned-up values (trimmed by Zod) to the API
+    // The cleaned-up values (trimmed by Zod)
+    const cleaned = organizationSchema.parse(values);
+
+    // Replacing or removing a website that is already saved needs a "yes" first.
+    // The API refuses it otherwise (Irene's CHUD-30 rule), so ask before sending.
+    if (savedWebsite.url !== "" && !sameWebsite(cleaned.websiteUrl, savedWebsite.url)) {
+      setPendingSave(cleaned);
+      return;
+    }
+    await save(cleaned, false);
+  }
+
+  // Send the changes to the API. confirmOverwrite = the user said yes to replacing the website.
+  async function save(cleaned: Cleaned, confirmOverwrite: boolean) {
     setSaving(true);
     try {
-      const cleaned = organizationSchema.parse(values);
-      const saved = await updateOrganization(id, cleaned);
+      const saved = await updateOrganization(id, cleaned, { confirmOverwrite });
       setValues({ name: saved.name, domainId: saved.domainId, websiteUrl: saved.websiteUrl });
       setSavedName(saved.name);
       setSavedWebsite(toSavedWebsite(saved));
@@ -118,6 +137,7 @@ export default function OrganizationEditForm({ id }: { id: string }) {
       setMessage({ type: "error", text: err instanceof Error ? err.message : "Something went wrong. Try again." });
     } finally {
       setSaving(false); // runs whether the save worked or failed
+      setPendingSave(null);
     }
   }
 
@@ -154,7 +174,13 @@ export default function OrganizationEditForm({ id }: { id: string }) {
         {flag.flagged && <FlaggedBanner reason={flag.flagReason} busy={flagging} onUnflag={() => changeFlag(false)} />}
 
         <div className="mb-5">
-          <WebsiteStatus url={savedWebsite.url} source={savedWebsite.source} updatedAt={savedWebsite.updatedAt} />
+          <WebsiteStatus
+            url={savedWebsite.url}
+            source={savedWebsite.source}
+            updatedAt={savedWebsite.updatedAt}
+            status={savedWebsite.status}
+            suggestions={savedWebsite.suggestions}
+          />
         </div>
 
         <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
@@ -226,6 +252,22 @@ export default function OrganizationEditForm({ id }: { id: string }) {
         >
           <FlagReasonField value={flagReason} onChange={setFlagReason} />
         </ConfirmDialog>
+      )}
+
+      {pendingSave && (
+        <ConfirmDialog
+          title={pendingSave.websiteUrl === "" ? "Remove the website on file?" : "Replace the website on file?"}
+          message={
+            pendingSave.websiteUrl === ""
+              ? `${displayUrl(savedWebsite.url)} will be removed from this entity. The old website stays in the record history.`
+              : `${displayUrl(savedWebsite.url)} will be replaced with ${displayUrl(pendingSave.websiteUrl)}. The old website stays in the record history.`
+          }
+          confirmLabel={pendingSave.websiteUrl === "" ? "Remove website" : "Replace website"}
+          busyLabel="Saving…"
+          busy={saving}
+          onConfirm={() => save(pendingSave, true)}
+          onCancel={() => setPendingSave(null)}
+        />
       )}
     </form>
   );

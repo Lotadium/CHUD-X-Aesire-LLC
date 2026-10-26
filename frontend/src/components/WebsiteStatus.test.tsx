@@ -38,3 +38,13 @@ test("helpers: link always uses http(s), display drops the scheme, bad dates are
   expect(formatDate("not a date")).toBe("");
   expect(formatDate("")).toBe("");
 });
+
+test("shows when discovery left suggestions waiting for review", () => {
+  render(<WebsiteStatus url="" source="" updatedAt="" status="NEEDS_REVIEW" suggestions={2} />);
+  expect(screen.getByText("Needs review · 2 suggestions")).toBeInTheDocument();
+});
+
+test("says when the search found no website", () => {
+  render(<WebsiteStatus url="" source="" updatedAt="" status="NOT_FOUND" />);
+  expect(screen.getByText("No website found by search")).toBeInTheDocument();
+});

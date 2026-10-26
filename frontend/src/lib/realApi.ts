@@ -9,7 +9,7 @@
 //   - no deleting:  per the charter (2.3 f.iv) records are flagged, never removed.
 //                   Flags use `is_flagged` + `flag_reason` columns on organization and
 //                   person, which the database (CHUD-10) and API (CHUD-13) still need to add.
-import type { Contact, Flag, Organization, WebsiteInfo } from "./fakeApi";
+import type { Contact, Flag, Organization, UpdateOptions, WebsiteInfo, WebsiteStatusValue } from "./fakeApi";
 
 // Where the API lives. Set VITE_API_URL in .env.local; defaults to Irene's local server.
 const BASE_URL: string = import.meta.env.VITE_API_URL ?? "http://localhost:8787/api";
@@ -75,12 +75,11 @@ type ApiOrganization = {
   domain_id: number;
   name: string;
   website_url: string | null;
-  // Audit columns every row has (CHUD-10)
-  updated_by_type?: "USER" | "REFRESH";
-  date_last_updated?: string;
-  // Website-only source and date. Not in the API yet: proposed for Irene's CHUD-30.
-  website_source?: "auto" | "manual" | null;
+  // Website discovery fields from Irene's CHUD-30 API (DataBase/database_add_website_discovery.sql)
+  website_status?: "NOT_SEARCHED" | "FOUND" | "NEEDS_REVIEW" | "NOT_FOUND" | null;
+  website_source?: "AUTO" | "MANUAL" | null;
   website_updated_at?: string | null;
+  website_candidates?: { url: string; page_title: string | null }[] | null;
 } & ApiFlag;
 type ApiPosition = {
   position_id: number;
@@ -109,17 +108,17 @@ export async function listDomains(): Promise<{ id: string; name: string }[]> {
 
 // ---------- organizations ----------
 
-// Where the saved website came from and when (CHUD-31).
-// Uses website_source / website_updated_at when the API sends them (proposed for CHUD-30).
-// Until then it falls back to the whole row's audit columns: a REFRESH write counts as
-// "found automatically", a USER write as "entered manually". That fallback is only
-// approximate, since editing the name also updates the row.
+// Where the saved website came from, when it changed, and where discovery stands (CHUD-31).
+// Irene's API (CHUD-30) sends website_source as "AUTO" / "MANUAL"; the form uses "auto" / "manual".
 export function toWebsiteInfo(o: ApiOrganization): WebsiteInfo {
-  if (!o.website_url) return { websiteSource: "", websiteUpdatedAt: "" };
-  const source =
-    o.website_source ??
-    (o.updated_by_type === "REFRESH" ? "auto" : o.updated_by_type === "USER" ? "manual" : "");
-  return { websiteSource: source, websiteUpdatedAt: o.website_updated_at ?? o.date_last_updated ?? "" };
+  const hasUrl = !!o.website_url;
+  const source = hasUrl && o.website_source ? (o.website_source.toLowerCase() as "auto" | "manual") : "";
+  return {
+    websiteSource: source === "auto" || source === "manual" ? source : "",
+    websiteUpdatedAt: hasUrl ? (o.website_updated_at ?? "") : "",
+    websiteStatus: (o.website_status ?? "") as WebsiteStatusValue,
+    websiteSuggestions: o.website_candidates?.length ?? 0,
+  };
 }
 
 function toOrganization(o: ApiOrganization): Organization {
@@ -137,11 +136,13 @@ export async function getOrganization(id: string): Promise<Organization> {
   return toOrganization(await request<ApiOrganization>(`/organizations/${id}`));
 }
 
-export async function updateOrganization(id: string, changes: Partial<Organization>): Promise<Organization> {
+export async function updateOrganization(id: string, changes: Partial<Organization>, options: UpdateOptions = {}): Promise<Organization> {
   const body: Record<string, unknown> = {};
   if (changes.name !== undefined) body.name = changes.name;
   if (changes.domainId !== undefined) body.domain_id = toNumber(changes.domainId);
   if (changes.websiteUrl !== undefined) body.website_url = withHttps(changes.websiteUrl);
+  // The API won't replace or clear a website that is already set without this (409 otherwise)
+  if (options.confirmOverwrite) body.confirm_overwrite = true;
   return toOrganization(await request<ApiOrganization>(`/organizations/${id}`, "PATCH", body));
 }
 

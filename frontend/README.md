@@ -75,11 +75,19 @@ changes, and the new tests.
 ## Website on the entity page (CHUD-31)
 
 The entity page shows the website that is **saved**, separate from the Website URL box being
-edited: a link that opens in a new tab (or "No website yet"), whether it was **found
-automatically** by website discovery or **entered manually**, and when it was last updated.
+edited:
 
-The API doesn't send a website-only source and date yet. Until it does, `realApi.ts` uses the
-whole row's `updated_by_type` (`REFRESH` = found automatically, `USER` = entered manually) and
-`date_last_updated`. This is approximate, because editing the name also changes them. When the
-API adds `website_source` (`"auto"` / `"manual"`) and `website_updated_at` (proposed for
-CHUD-30), the page uses those automatically.
+- a link that opens in a new tab, or "No website yet" ("No website found by search" if
+  discovery came up empty)
+- whether it was **found automatically** by website discovery or **entered manually**
+- when the website was last updated
+- a **Needs review** badge when discovery left suggestions waiting (Jaden's review screen, CHUD-50)
+
+These come from the website fields in Irene's API (CHUD-30): `website_source` (`AUTO` / `MANUAL`),
+`website_updated_at`, `website_status` and `website_candidates`.
+
+**Replacing or removing a saved website asks first.** The API refuses to change a website that is
+already set unless the request says `confirm_overwrite: true` (it answers 409 otherwise). So when
+the box no longer matches the saved website, the form shows "Replace the website on file?" (or
+"Remove…") and only sends `confirm_overwrite` after the user says yes. Typing the same site with or
+without `https://` counts as no change. The fake API follows the same rule.
