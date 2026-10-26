@@ -41,6 +41,7 @@ new screens so everything matches.
 frontend/src/
   components/
     OrganizationEditForm.tsx   edit + flag an organization (entity)     CHUD-15
+    WebsiteStatus.tsx          saved website: link, source, last updated CHUD-31
     ContactEditForm.tsx        edit + flag a contact                    CHUD-15
     ConfirmDialog.tsx          reusable "are you sure?" dialog (styled like the mockup pop-ups)
     FlagReasonField.tsx        required reason box in the flag dialog
@@ -66,3 +67,19 @@ I (Kathleen Collier) used Claude Opus 5.5 (medium effort) as a learning and codi
   the API client, and tests. I reviewed, ran, and tested all of it before committing.
 
 Requirements, field decisions, team coordination, and final testing were done by me.
+
+On CHUD-31 (show & edit website URL on the entity page), Claude Opus 5.5 wrote the
+`WebsiteStatus` component, the website source/date mapping in `realApi.ts`, the fake data
+changes, and the new tests.
+
+## Website on the entity page (CHUD-31)
+
+The entity page shows the website that is **saved**, separate from the Website URL box being
+edited: a link that opens in a new tab (or "No website yet"), whether it was **found
+automatically** by website discovery or **entered manually**, and when it was last updated.
+
+The API doesn't send a website-only source and date yet. Until it does, `realApi.ts` uses the
+whole row's `updated_by_type` (`REFRESH` = found automatically, `USER` = entered manually) and
+`date_last_updated`. This is approximate, because editing the name also changes them. When the
+API adds `website_source` (`"auto"` / `"manual"`) and `website_updated_at` (proposed for
+CHUD-30), the page uses those automatically.

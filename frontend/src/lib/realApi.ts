@@ -9,7 +9,7 @@
 //   - no deleting:  per the charter (2.3 f.iv) records are flagged, never removed.
 //                   Flags use `is_flagged` + `flag_reason` columns on organization and
 //                   person, which the database (CHUD-10) and API (CHUD-13) still need to add.
-import type { Contact, Flag, Organization } from "./fakeApi";
+import type { Contact, Flag, Organization, WebsiteInfo } from "./fakeApi";
 
 // Where the API lives. Set VITE_API_URL in .env.local; defaults to Irene's local server.
 const BASE_URL: string = import.meta.env.VITE_API_URL ?? "http://localhost:8787/api";
@@ -70,7 +70,18 @@ function withHttps(url: string): string | null {
 
 // ---------- shapes the API sends back (only the fields we use) ----------
 
-type ApiOrganization = { organization_id: number; domain_id: number; name: string; website_url: string | null } & ApiFlag;
+type ApiOrganization = {
+  organization_id: number;
+  domain_id: number;
+  name: string;
+  website_url: string | null;
+  // Audit columns every row has (CHUD-10)
+  updated_by_type?: "USER" | "REFRESH";
+  date_last_updated?: string;
+  // Website-only source and date. Not in the API yet: proposed for Irene's CHUD-30.
+  website_source?: "auto" | "manual" | null;
+  website_updated_at?: string | null;
+} & ApiFlag;
 type ApiPosition = {
   position_id: number;
   organization_id: number;
@@ -98,6 +109,19 @@ export async function listDomains(): Promise<{ id: string; name: string }[]> {
 
 // ---------- organizations ----------
 
+// Where the saved website came from and when (CHUD-31).
+// Uses website_source / website_updated_at when the API sends them (proposed for CHUD-30).
+// Until then it falls back to the whole row's audit columns: a REFRESH write counts as
+// "found automatically", a USER write as "entered manually". That fallback is only
+// approximate, since editing the name also updates the row.
+export function toWebsiteInfo(o: ApiOrganization): WebsiteInfo {
+  if (!o.website_url) return { websiteSource: "", websiteUpdatedAt: "" };
+  const source =
+    o.website_source ??
+    (o.updated_by_type === "REFRESH" ? "auto" : o.updated_by_type === "USER" ? "manual" : "");
+  return { websiteSource: source, websiteUpdatedAt: o.website_updated_at ?? o.date_last_updated ?? "" };
+}
+
 function toOrganization(o: ApiOrganization): Organization {
   return {
     id: String(o.organization_id),
@@ -105,6 +129,7 @@ function toOrganization(o: ApiOrganization): Organization {
     domainId: String(o.domain_id),
     websiteUrl: nullToBlank(o.website_url),
     ...toFlag(o),
+    ...toWebsiteInfo(o),
   };
 }
 

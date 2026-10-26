@@ -12,13 +12,22 @@ const delay = () => new Promise((resolve) => setTimeout(resolve, 300));
 // is FLAGGED instead; it stays in the database with its history kept.
 export type Flag = { flagged: boolean; flagReason: string };
 
-// The shape of an organization: the form fields plus an id and its flag
-export type Organization = z.infer<typeof organizationSchema> & { id: string } & Flag;
+// Where the saved website came from (CHUD-31):
+//   "auto"   = found by website discovery (CHUD-29/30)
+//   "manual" = typed in by staff on the entity form
+//   ""       = no website saved
+export type WebsiteSource = "auto" | "manual" | "";
+export type WebsiteInfo = { websiteSource: WebsiteSource; websiteUpdatedAt: string }; // date as ISO text, or ""
+
+// The shape of an organization: the form fields plus an id, its flag, and where its website came from
+export type Organization = z.infer<typeof organizationSchema> & { id: string } & Flag & WebsiteInfo;
 
 // Pretend database (resets every time the page reloads)
 const organizations: Organization[] = [
-  { id: "1", name: "Sacramento Metro Fire", domainId: "1", websiteUrl: "https://metrofire.ca.gov/", flagged: false, flagReason: "" },
-  { id: "2", name: "Folsom Water District", domainId: "2", websiteUrl: "", flagged: false, flagReason: "" },
+  { id: "1", name: "Sacramento Metro Fire", domainId: "1", websiteUrl: "https://metrofire.ca.gov/", flagged: false, flagReason: "",
+    websiteSource: "auto", websiteUpdatedAt: "2026-10-20T19:00:00Z" },
+  { id: "2", name: "Folsom Water District", domainId: "2", websiteUrl: "", flagged: false, flagReason: "",
+    websiteSource: "", websiteUpdatedAt: "" },
 ];
 
 // Options for the "Domain" dropdown (Ryan's domain table)
@@ -44,7 +53,14 @@ export async function updateOrganization(id: string, changes: Partial<Organizati
   await delay();
   const index = organizations.findIndex((o) => o.id === id);
   if (index === -1) throw new Error("Organization not found.");
-  organizations[index] = { ...organizations[index], ...changes, id };
+  const before = organizations[index];
+  const next = { ...before, ...changes, id };
+  // A website typed in on the form is "manual"; clearing it removes the source and date
+  if (changes.websiteUrl !== undefined && changes.websiteUrl !== before.websiteUrl) {
+    next.websiteSource = changes.websiteUrl === "" ? "" : "manual";
+    next.websiteUpdatedAt = changes.websiteUrl === "" ? "" : new Date().toISOString();
+  }
+  organizations[index] = next;
   return { ...organizations[index] };
 }
 

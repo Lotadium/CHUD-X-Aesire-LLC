@@ -2,11 +2,12 @@
 // See frontend/README.md → "AI assistance".
 
 import { useEffect, useState } from "react";
-import { getOrganization, updateOrganization, setOrganizationFlag, listDomains } from "../lib/api";
+import { getOrganization, updateOrganization, setOrganizationFlag, listDomains, type Organization, type WebsiteSource } from "../lib/api";
 import { organizationSchema } from "../lib/validation";
 import ConfirmDialog from "./ConfirmDialog";
 import FormField, { SelectField } from "./FormField";
 import FlagReasonField from "./FlagReasonField";
+import WebsiteStatus from "./WebsiteStatus";
 import { Button, Card, ErrorBanner, FlagIcon, FlaggedBanner, PageHeader, SavedPill } from "./ui";
 
 // Edit form for an entity (an "organization" in the database).
@@ -17,6 +18,14 @@ import { Button, Card, ErrorBanner, FlagIcon, FlaggedBanner, PageHeader, SavedPi
 // What the form holds while the user types (every input is text)
 type FormValues = { name: string; domainId: string; websiteUrl: string };
 type FieldName = keyof FormValues;
+
+// The website as last loaded/saved (CHUD-31), shown above the form fields
+type SavedWebsite = { url: string; source: WebsiteSource; updatedAt: string };
+const toSavedWebsite = (org: Organization): SavedWebsite => ({
+  url: org.websiteUrl,
+  source: org.websiteSource,
+  updatedAt: org.websiteUpdatedAt,
+});
 
 // Run the Zod schema and turn its errors into { fieldName: "message" }
 function validate(values: FormValues): Partial<Record<FieldName, string>> {
@@ -50,6 +59,7 @@ export default function OrganizationEditForm({ id }: { id: string }) {
   const [flagReason, setFlagReason] = useState(""); // what the user types in the dialog
   const [flagging, setFlagging] = useState(false);
   const [savedName, setSavedName] = useState(""); // name as last loaded/saved, shown in the flag dialog
+  const [savedWebsite, setSavedWebsite] = useState<SavedWebsite>({ url: "", source: "", updatedAt: "" });
 
   // Runs once when the form appears (and again if the id changes):
   // load the entity AND the domain list at the same time
@@ -59,6 +69,7 @@ export default function OrganizationEditForm({ id }: { id: string }) {
         setValues({ name: org.name, domainId: org.domainId, websiteUrl: org.websiteUrl });
         setFlag({ flagged: org.flagged, flagReason: org.flagReason });
         setSavedName(org.name);
+        setSavedWebsite(toSavedWebsite(org));
         setDomains(domainList);
       })
       .catch((err) => setLoadError(err.message));
@@ -101,6 +112,7 @@ export default function OrganizationEditForm({ id }: { id: string }) {
       const saved = await updateOrganization(id, cleaned);
       setValues({ name: saved.name, domainId: saved.domainId, websiteUrl: saved.websiteUrl });
       setSavedName(saved.name);
+      setSavedWebsite(toSavedWebsite(saved));
       setMessage({ type: "success", text: "Changes saved" });
     } catch (err) {
       setMessage({ type: "error", text: err instanceof Error ? err.message : "Something went wrong. Try again." });
@@ -140,6 +152,10 @@ export default function OrganizationEditForm({ id }: { id: string }) {
         aside={message?.type === "success" ? <SavedPill text={message.text} /> : undefined}
       >
         {flag.flagged && <FlaggedBanner reason={flag.flagReason} busy={flagging} onUnflag={() => changeFlag(false)} />}
+
+        <div className="mb-5">
+          <WebsiteStatus url={savedWebsite.url} source={savedWebsite.source} updatedAt={savedWebsite.updatedAt} />
+        </div>
 
         <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
           <FormField

@@ -93,3 +93,50 @@ test("Flag record stays disabled until a reason is entered", async () => {
   await user.type(screen.getByLabelText(/Reason/), "Closed");
   expect(screen.getByRole("button", { name: "Flag record" })).toBeEnabled();
 });
+
+// ---------- Website on the entity page (CHUD-31) ----------
+
+test("shows the saved website as a link, where it came from, and when it was updated", async () => {
+  render(<OrganizationEditForm id="1" />);
+  const link = await screen.findByRole("link", { name: /metrofire\.ca\.gov/ });
+  expect(link).toHaveAttribute("href", "https://metrofire.ca.gov/");
+  expect(link).toHaveAttribute("target", "_blank");
+  expect(screen.getByText("Found automatically")).toBeInTheDocument();
+  expect(screen.getByText("Updated Oct 20, 2026")).toBeInTheDocument();
+});
+
+test("an entity with no website says 'No website yet'", async () => {
+  render(<OrganizationEditForm id="2" />);
+  expect(await screen.findByText("No website yet")).toBeInTheDocument();
+  expect(screen.queryByRole("link")).not.toBeInTheDocument();
+});
+
+test("the link only changes after saving, then shows 'Entered manually'; clearing removes it", async () => {
+  const user = userEvent.setup();
+  render(<OrganizationEditForm id="2" />);
+  const website = await screen.findByLabelText(/Website/);
+  await user.type(website, "https://folsomwater.ca.gov");
+  expect(screen.getByText("No website yet")).toBeInTheDocument(); // typing alone doesn't change what's on file
+
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  const link = await screen.findByRole("link", { name: /folsomwater\.ca\.gov/ });
+  expect(link).toHaveAttribute("href", "https://folsomwater.ca.gov");
+  expect(screen.getByText("Entered manually")).toBeInTheDocument();
+  expect(screen.getByText(/^Updated /)).toBeInTheDocument();
+
+  await user.clear(website);
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(await screen.findByText("No website yet")).toBeInTheDocument();
+  expect(screen.queryByRole("link")).not.toBeInTheDocument();
+});
+
+test("a bad website is not saved, and the link stays the same", async () => {
+  const user = userEvent.setup();
+  render(<OrganizationEditForm id="1" />);
+  const website = await screen.findByLabelText(/Website/);
+  await user.clear(website);
+  await user.type(website, "not a site");
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(screen.getByText(/Enter a website/)).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: /metrofire\.ca\.gov/ })).toBeInTheDocument();
+});
