@@ -8,6 +8,8 @@ export type Organization = {
   domain_name?: string | null;
   date_last_updated?: string | null;
   is_flagged?: boolean | null;
+  // Website discovery status, added by CHUD-30
+  website_status?: "NOT_SEARCHED" | "FOUND" | "NEEDS_REVIEW" | "NOT_FOUND" | null;
 };
 
 export type Person = {

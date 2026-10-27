@@ -9,14 +9,15 @@ import RecordsList from "./RecordsList";
 const orgs = [
   { organization_id: 1, name: "Test Fire District", website_url: null, domain_name: "Fire" },
   { organization_id: 2, name: "Sample Water Agency", website_url: null, domain_name: "Water" },
+  { organization_id: 3, name: "Example Parks Office", website_url: null, domain_name: "Parks", website_status: "NEEDS_REVIEW" },
 ];
 
 let used = 4;
 let finishSearch: (() => void) | null = null;
 let findCalls: number[] = [];
 const results: Record<number, object> = {
-  1: { result: "saved", website_url: "https://testfire.example" },
-  2: { result: "needs_review", website_url: "https://maybe-water.example" },
+  1: { result: "saved", organization: { website_url: "https://testfire.example" } },
+  2: { result: "needs_review", organization: { website_url: null } },
 };
 
 function json(body: unknown) {
@@ -31,7 +32,7 @@ beforeEach(() => {
     if (url.endsWith("/organizations?limit=200")) return json({ data: orgs });
     if (url.endsWith("/people?limit=200")) return json({ data: [] });
     if (url.endsWith("/search-usage")) return json({ month: "2026-10", used, limit: 500 });
-    const m = url.match(/\/organizations\/(\d+)\/find-website$/);
+    const m = url.match(/\/organizations\/(\d+)\/website\/search$/);
     if (m) {
       const id = Number(m[1]);
       findCalls.push(id);
@@ -79,8 +80,14 @@ test("bulk action searches selected entities and links 'needs review' to the rev
   expect(findCalls).toEqual([2]);
 
   finishSearch!();
-  const link = await screen.findByRole("link", { name: "Needs review" });
+  const row = (await screen.findByText("Sample Water Agency")).closest("tr")!;
+  const link = await within(row).findByRole("link", { name: "Needs review" });
   expect(link).toHaveAttribute("href", "#/review/website/2");
-  const row = link.closest("tr")!;
-  expect(within(row).getByText("Sample Water Agency")).toBeInTheDocument();
+});
+
+test("shows a 'needs review' result saved earlier (CHUD-30 website_status) when the page loads", async () => {
+  render(<RecordsList />);
+  const row = (await screen.findByText("Example Parks Office")).closest("tr")!;
+  expect(within(row).getByRole("link", { name: "Needs review" })).toHaveAttribute("href", "#/review/website/3");
+  expect(findCalls).toEqual([]);
 });

@@ -4,17 +4,17 @@ import type { Organization, Person } from "../lib/recordsApi";
 import { fetchSearchUsage, findWebsite, reviewScreenUrl } from "../lib/websiteSearchApi";
 import type { SearchResult, SearchUsage } from "../lib/websiteSearchApi";
 import { Button, Card, ErrorBanner, FlagIcon, PageHeader } from "../components/ui";
- 
+
 type Row = {
   key: string; orgId: number; firstOfEntity: boolean;
   domain: string; entity: string; website: string; flagged: boolean;
   noContact: boolean; contact: string; title: string; email: string; phone: string; updated: string;
 };
- 
+
 function formatDate(iso?: string | null) {
   return iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—";
 }
- 
+
 // One row per contact. An entity with no contacts still gets one row.
 function buildRows(orgs: Organization[], people: Person[]): Row[] {
   const rows: Row[] = [];
@@ -47,16 +47,16 @@ function buildRows(orgs: Organization[], people: Person[]): Row[] {
   }
   return rows;
 }
- 
+
 // Website search state for one entity (CHUD-49). AI use: written with help from Claude.
 type SearchState =
   | { status: "searching" }
   | { status: "done"; result: SearchResult; url: string | null }
   | { status: "error"; message: string };
- 
+
 // How many searches a bulk action runs at the same time
 const BULK_CONCURRENCY = 3;
- 
+
 function SearchOutcome({ orgId, state }: { orgId: number; state: SearchState | undefined }) {
   if (!state) return null;
   if (state.status === "searching") {
@@ -82,10 +82,10 @@ function SearchOutcome({ orgId, state }: { orgId: number; state: SearchState | u
   }
   return <span className="text-xs text-muted">No match found</span>;
 }
- 
+
 const th = "px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted";
 const td = "px-4 py-3 align-top";
- 
+
 export default function RecordsList() {
   const [status, setStatus] = useState<"loading" | "error" | "ready">("loading");
   const [rows, setRows] = useState<Row[]>([]);
@@ -96,24 +96,24 @@ export default function RecordsList() {
   const [usageError, setUsageError] = useState(false);
   // Entities with a search in progress. A ref (not state) so two fast clicks can't both start a search.
   const running = useRef<Set<number>>(new Set());
- 
+
   function loadUsage() {
     fetchSearchUsage()
       .then((u) => { setUsage({ used: u.used, limit: u.limit }); setUsageError(false); })
       .catch(() => setUsageError(true));
   }
- 
+
   useEffect(loadUsage, []);
- 
+
   async function runSearch(orgId: number) {
     if (running.current.has(orgId)) return;
     running.current.add(orgId);
     setSearches((s) => ({ ...s, [orgId]: { status: "searching" } }));
     try {
       const res = await findWebsite(orgId);
-      setSearches((s) => ({ ...s, [orgId]: { status: "done", result: res.result, url: res.website_url } }));
-      if (res.result === "saved" && res.website_url) {
-        const url = res.website_url;
+      const url = res.organization?.website_url ?? null;
+      setSearches((s) => ({ ...s, [orgId]: { status: "done", result: res.result, url } }));
+      if (res.result === "saved" && url) {
         setRows((rs) => rs.map((r) => (r.orgId === orgId ? { ...r, website: url } : r)));
       }
       if (res.usage) setUsage(res.usage);
@@ -126,7 +126,7 @@ export default function RecordsList() {
       running.current.delete(orgId);
     }
   }
- 
+
   async function runBulkSearch() {
     const queue = [...selected].filter((id) => !running.current.has(id));
     setSelected(new Set());
@@ -135,7 +135,7 @@ export default function RecordsList() {
     };
     await Promise.all(Array.from({ length: Math.min(BULK_CONCURRENCY, queue.length) }, worker));
   }
- 
+
   function toggleSelected(orgId: number) {
     setSelected((sel) => {
       const next = new Set(sel);
@@ -144,15 +144,22 @@ export default function RecordsList() {
       return next;
     });
   }
- 
+
   const entityIds = rows.filter((r) => r.firstOfEntity).map((r) => r.orgId);
   const allSelected = entityIds.length > 0 && entityIds.every((id) => selected.has(id));
- 
+
   function load() {
     setStatus("loading");
     fetchRecords()
       .then(({ organizations, people }) => {
         setRows(buildRows(organizations, people));
+        // Show results saved earlier (CHUD-30 website_status), so "needs review" survives a page reload
+        const saved: Record<number, SearchState> = {};
+        for (const org of organizations) {
+          if (org.website_status === "NEEDS_REVIEW") saved[org.organization_id] = { status: "done", result: "needs_review", url: null };
+          if (org.website_status === "NOT_FOUND") saved[org.organization_id] = { status: "done", result: "no_match", url: null };
+        }
+        setSearches(saved);
         setStatus("ready");
       })
       .catch((err) => {
@@ -160,9 +167,9 @@ export default function RecordsList() {
         setStatus("error");
       });
   }
- 
+
   useEffect(load, []);
- 
+
   return (
     <div>
       <PageHeader
@@ -170,33 +177,33 @@ export default function RecordsList() {
         title="Entities & contacts"
         subtitle="Every entity with the contacts on file for it."
       />
- 
+
       <p className="mb-4 text-sm text-muted" aria-live="polite">
         Web searches this month:{" "}
         <span className="font-semibold text-ink">
           {usageError ? "unavailable" : usage === null ? "…" : usage.limit !== null ? `${usage.used} of ${usage.limit}` : usage.used}
         </span>
       </p>
- 
+
       {status === "loading" && (
         <Card title="Loading records…" subtitle="Getting the latest entities and contacts.">
           <div role="status" aria-label="Loading" className="h-2 w-40 animate-pulse rounded bg-line" />
         </Card>
       )}
- 
+
       {status === "error" && (
         <div className="space-y-4">
           <ErrorBanner text={errorMessage} />
           <Button type="button" variant="secondary" onClick={load}>Try again</Button>
         </div>
       )}
- 
+
       {status === "ready" && rows.length === 0 && (
         <Card title="No records yet" subtitle="Entities and their contacts will show up here once records are added.">
           <p className="text-sm text-muted">Use “New Record” in the top bar to add the first one.</p>
         </Card>
       )}
- 
+
       {status === "ready" && rows.length > 0 && (
         <>
         <div className="mb-3 flex items-center gap-3">
