@@ -100,6 +100,7 @@ curl -X PUT http://localhost:8787/api/organizations/1 -H "Content-Type: applicat
 | POST | `/api/domains` | `{ name, description? }`; names are unique ignoring case |
 | GET | `/api/departments` | |
 | POST | `/api/departments` | `{ name }` |
+| POST | `/api/web-search` | `{ firstName, lastName, organizationName?, middleName?, nameSuffix?, title?, departmentName?, organizationDomain?, city?, county?, state? }`; returns array of `{ title, url, description }` |
 
 ### Entities (organizations)
 
