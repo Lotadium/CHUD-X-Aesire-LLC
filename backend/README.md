@@ -192,18 +192,26 @@ backend/
   src/db.ts            transactions (records who made a change) and insert/update helpers
   src/validate.ts      input checks
   src/errors.ts        turns database errors into clean 400/404/409 responses
+  src/ranking/rank.ts  scores web search results and picks the official website (CHUD-48)
   test/api.test.ts     integration tests
+  test/rank.test.ts    unit tests for the ranking rules
 ```
 
 ## AI use
 
 - **AI used:** Yes.
-- **Tool and model:** Claude Code (Sonnet 5.5).
+- **Tool and model:** Claude Code (Sonnet 5.5; Opus 5.5 for CHUD-48).
 - **How it was made:** written with AI help from Claude Code, directed by Irene Riva. Working from Irene's requests,
   Ryan's schema (`DataBase/database_schema.sql`) and Neon's documentation, Claude Code wrote the code in `backend/`
   (routes, validation, error handling, database helpers), the integration tests and this README. That includes the
   change from deleting records to flagging them, and for CHUD-30 the website endpoints with overwrite protection
   (`src/website.ts`). Irene directed the work, ran the API against a Neon dev branch, and checked the results by hand.
+
+  For CHUD-48, directed by Ryan Griffiths: working from the ticket's acceptance criteria, the CHUD-29 search code
+  (`src/search/`) and the CHUD-30 discovery endpoint, Claude Code wrote the ranking rules in `src/ranking/rank.ts`
+  and the unit tests in `test/rank.test.ts`, and reviewed the project `.gitignore`. Ryan set the requirements,
+  reviewed the code, and ran the type check and unit tests; the scoring weights and thresholds still need tuning
+  against real search results.
 - **Peer review:** pending, in the pull request.
 
 Every source file starts with a short AI-use note that points here.
