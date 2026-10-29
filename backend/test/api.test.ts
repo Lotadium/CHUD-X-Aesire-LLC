@@ -731,6 +731,26 @@ describe("CHUD API", { skip }, () => {
       assert.equal(kept.body.website_source, "MANUAL");
     });
 
+    it("saving the edit form on an entity under review leaves the review alone", async () => {
+      const id = await create("Under Review With Website");
+      await call("PUT", `/api/organizations/${id}/website`, { url: "https://has.example" });
+      await discover(id, { confidence: "low", candidates: [{ url: "https://maybe.example" }], confirm_overwrite: true });
+      const before = (await call("GET", `/api/organizations/${id}`)).body;
+      assert.equal(before.website_status, "NEEDS_REVIEW");
+
+      // The form sends the website on every save, even when only the name changed.
+      const saved = await call("PATCH", `/api/organizations/${id}`, {
+        name: "Under Review With Website (renamed)",
+        domain_id: domain,
+        website_url: "https://has.example",
+      });
+      assert.equal(saved.status, 200);
+      assert.equal(saved.body.name, "Under Review With Website (renamed)");
+      assert.equal(saved.body.website_status, "NEEDS_REVIEW");
+      assert.equal(saved.body.website_candidates.length, 1);
+      assert.equal(saved.body.website_url, "https://has.example");
+    });
+
     it("rejecting all suggestions on an entity with a website keeps the website", async () => {
       const id = await create("Has Website");
       await call("PUT", `/api/organizations/${id}/website`, { url: "https://keep.example" });

@@ -129,7 +129,7 @@ export function organizationRoutes(pool: Pool) {
     const body = parseFields(await readJson(c), WEBSITE_FIELDS, "create");
     const fields: Parsed = { website_url: body.url };
     const organization = await withTransaction(pool, actor, async (db) => {
-      await applyWebsiteChange(db, id, fields, body.confirm_overwrite === true);
+      await applyWebsiteChange(db, id, fields, body.confirm_overwrite === true, true); // true: keeping the same URL settles a review
       if (Object.keys(fields).length > 0) {
         await updateRow(db, "organization", "organization_id", id, fields, actor);
       }

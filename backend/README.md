@@ -159,8 +159,10 @@ Saves it as `FOUND` / `MANUAL` and drops any candidates waiting for review. The 
 - **A website that is already set is never replaced or cleared without confirmation.** Send `confirm_overwrite: true`,
   or the API answers 409 with the existing URL. This applies to the website endpoint, to discovery results and to
   `website_url` in the general organization edit. Finding the same URL again changes nothing.
-- Sending the website an entity already has (`PUT .../website` or the general edit) leaves the URL as it is, but settles
-  a pending review: status goes back to `FOUND` and the waiting suggestions are dropped.
+- Sending the website an entity already has with `PUT .../website` leaves the URL as it is, but settles a pending
+  review: status goes back to `FOUND` and the waiting suggestions are dropped. The general organization edit does
+  **not** do this, because a form sends the website on every save: renaming an entity that is waiting for review
+  leaves its review alone.
 - **Reject all suggestions:** `POST .../website/reject-candidates` clears the candidates. The entity keeps its website
   (`FOUND`) or, if it has none, becomes `NOT_FOUND`. Use it when a reviewer says "none of these is right".
 - Entities that already had a website when `database_add_website_discovery.sql` was run are set to `FOUND` / `MANUAL`
