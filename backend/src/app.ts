@@ -9,6 +9,7 @@ import { lookupRoutes } from "./routes/lookups.ts";
 import { organizationRoutes } from "./routes/organizations.ts";
 import { peopleRoutes } from "./routes/people.ts";
 import { searchUsageRoutes } from "./routes/searchUsage.ts";
+import { webSearchRoutes } from "./routes/web-search.ts";
 
 export type AppEnv = { Variables: { actor: Actor } };
 
@@ -47,6 +48,7 @@ export function createApp(pool: Pool) {
   app.route("/api", organizationRoutes(pool));
   app.route("/api", peopleRoutes(pool));
   app.route("/api", searchUsageRoutes(pool));
+  app.route("/api", webSearchRoutes());
 
   app.notFound((c) => c.json({ error: "Not found" }, 404));
 
