@@ -40,7 +40,7 @@ export const Brave: SearchProvider<BraveRequestConfig> = {
         count: config.limit,
         spellcheck: false,
         operators: true,
-        safesearch: config.safesearch
+        safesearch: config.safesearch ? "strict" : "off"
       })
     });
     if (response.ok) {
@@ -50,7 +50,7 @@ export const Brave: SearchProvider<BraveRequestConfig> = {
         results.push(result);
       return results;
     } else {
-      throw new Error(`Request Error ${response.status}: ${response.statusText || "unknown"}`);
+      throw new Error(`Request Error ${response.status}: ${response.statusText || "unknown"} ${await response.text()}`);
     }
   }
 };

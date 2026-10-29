@@ -48,7 +48,7 @@ export function createApp(pool: Pool) {
   app.route("/api", organizationRoutes(pool));
   app.route("/api", peopleRoutes(pool));
   app.route("/api", searchUsageRoutes(pool));
-  app.route("/api", webSearchRoutes());
+  app.route("/api", webSearchRoutes(pool));
 
   app.notFound((c) => c.json({ error: "Not found" }, 404));
 

@@ -841,6 +841,22 @@ describe("CHUD API", { skip }, () => {
       }
     });
 
+    it("counts a web search made through POST /api/web-search", async () => {
+      const before = (await call("GET", "/api/search-usage")).body.used;
+      const realFetch = globalThis.fetch;
+      // Pretend to be the search provider, so the test makes no paid request
+      globalThis.fetch = (async () =>
+        new Response(JSON.stringify({ web: { results: [] } }), { status: 200 })) as typeof fetch;
+      try {
+        const res = await call("POST", "/api/web-search", { firstName: "Test", lastName: "Person" });
+        assert.equal(res.status, 200);
+      } finally {
+        globalThis.fetch = realFetch;
+      }
+      const after = (await call("GET", "/api/search-usage")).body.used;
+      assert.equal(after, before + 1);
+    });
+
     it("ignores a limit that isn't a whole number", () => {
       assert.equal(monthlyLimit("abc"), null);
       assert.equal(monthlyLimit(""), null);
