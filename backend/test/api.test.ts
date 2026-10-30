@@ -8,10 +8,10 @@
 // database whose name does not contain "test".
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { after, before, describe, it } from "node:test";
+import { after, before, describe, it, mock } from "node:test";
 import pg from "pg";
-import { createApp } from "../src/app.ts";
 
+let createApp: Function;
 const url = process.env.TEST_DATABASE_URL;
 const skip = url ? false : "set TEST_DATABASE_URL to run the API tests";
 
@@ -21,6 +21,15 @@ if (url) {
     throw new Error("Refusing to run tests: TEST_DATABASE_URL must be a local database with 'test' in its name");
   }
 }
+
+before(async () => {
+  mock.property(process, "env", {
+      ...process.env,
+      BRAVE_API_KEY: "MOCK_BRAVE_API_KEY",
+      BRAVE_SEARCH_ENDPOINT: "MOCK_BRAVE_SEARCH_ENDPOINT"
+  });
+  ({ createApp } = await import("../src/app.ts"));
+});
 
 describe("CHUD API", { skip }, () => {
   const pool = new pg.Pool({ connectionString: url, max: 5 });
