@@ -2,7 +2,8 @@
 // Unit tests for the website ranking rules (CHUD-48). No database or network needed.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { HIGH_SCORE, rankResults, scoreCandidate, type RankContext } from "../src/ranking/rank.ts";
+import { HIGH_SCORE, isNonOfficial, rankResults, scoreCandidate, type RankContext } from "../src/ranking/rank.ts";
+import { SAMPLES } from "./fixtures/search-results.ts";
 
 const result = (url: string, title: string) => ({ url, title, description: "" });
 
@@ -139,5 +140,51 @@ describe("rankResults", () => {
   it("returns none when there is nothing usable", () => {
     assert.deepEqual(rankResults([], sanMateo), { confidence: "none" });
     assert.deepEqual(rankResults([result("ftp://example.gov/", "County of San Mateo")], sanMateo), { confidence: "none" });
+  });
+});
+
+// Sample results for real entities, one set per entity type (test/fixtures/search-results.ts).
+describe("ranking real entity types", () => {
+  for (const sample of SAMPLES) {
+    describe(`${sample.type}: ${sample.entity.name}`, () => {
+      const ranked = rankResults(sample.results, sample.entity);
+
+      if (sample.expect === "high") {
+        it("chooses the official site with high confidence", () => {
+          assert.deepEqual(ranked, { confidence: "high", url: sample.official });
+        });
+      } else {
+        it("flags the result for review with at most 3 candidates", () => {
+          assert.equal(ranked.confidence, "low");
+          assert.ok(ranked.confidence === "low" && ranked.candidates.length >= 1 && ranked.candidates.length <= 3);
+        });
+        if (sample.official) {
+          it("still lists the official site first for the reviewer", () => {
+            assert.ok(ranked.confidence === "low");
+            assert.equal(ranked.candidates[0].url, sample.official);
+          });
+        }
+      }
+
+      it("ranks directory, news and social media sites low", () => {
+        const others = sample.results.filter((r) => isNonOfficial(r.url));
+        assert.ok(others.length > 0, "the sample should include some non-official sites");
+        for (const other of others) {
+          const score = scoreCandidate(other, sample.entity);
+          assert.ok(score <= 5, `${other.url} scored ${score}`);
+          if (sample.official) {
+            const official = sample.results.find((r) => r.url === sample.official)!;
+            assert.ok(score < scoreCandidate(official, sample.entity), `${other.url} outranks the official site`);
+          }
+        }
+      });
+    });
+  }
+
+  it("covers the five entity types the ticket asks for", () => {
+    const types = SAMPLES.map((sample) => sample.type);
+    for (const type of ["fire district", "water district", "city", "county agency", "special district"]) {
+      assert.ok(types.includes(type), type);
+    }
   });
 });

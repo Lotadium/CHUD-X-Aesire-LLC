@@ -77,7 +77,7 @@ const NON_OFFICIAL_DOMAINS = [
   "facebook.com", "instagram.com", "twitter.com", "x.com", "linkedin.com", "youtube.com", "tiktok.com",
   "nextdoor.com", "reddit.com", "pinterest.com",
   // news
-  "latimes.com", "nytimes.com", "sfgate.com", "sfchronicle.com", "mercurynews.com", "sacbee.com",
+  "latimes.com", "nytimes.com", "sfgate.com", "sfchronicle.com", "mercurynews.com", "eastbaytimes.com", "sacbee.com",
   "patch.com", "apnews.com", "reuters.com", "cnn.com", "foxnews.com", "nbcnews.com", "abc7.com",
   "kcra.com", "calmatters.org", "usatoday.com", "washingtonpost.com",
 ];
