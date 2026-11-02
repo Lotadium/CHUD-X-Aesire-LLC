@@ -31,7 +31,20 @@ it defaults to any origin for development.
 
 ## Test it
 
-The tests run against a **throwaway local Postgres** built from the schema files in `DataBase/` (the base schema, then the
+All the tests run with one command, `npm test`. The unit tests need nothing else; the API tests are skipped unless
+`TEST_DATABASE_URL` is set (see below).
+
+| File | What it tests | Needs |
+|------|---------------|-------|
+| `test/rank.test.ts` | Website ranking (CHUD-48): official site chosen, directory/news/social sites ranked low, low-confidence results flagged, using sample results for a fire district, water district, city, county agency and special district (`test/fixtures/search-results.ts`) | nothing |
+| `test/search.test.ts` | Web search (CHUD-29) with the Brave API mocked: query building, the `/api/web-search` route, and that the ranking result is a valid discovery request for CHUD-30 | nothing |
+| `test/api.test.ts` | The whole API, including saving discovery results (CHUD-30): high confidence saves, low confidence goes to review, an existing URL is not overwritten without confirmation | `TEST_DATABASE_URL` |
+
+**The tests never call the real Brave API or use search credit.** `npm test` loads `test/setup.ts` first, which
+replaces `BRAVE_API_KEY` and `BRAVE_SEARCH_ENDPOINT` with fake values (even if real ones are set), and the search
+tests mock `fetch`; an unmocked network call fails the test.
+
+The API tests run against a **throwaway local Postgres** built from the schema files in `DataBase/` (the base schema, then the
 flag and website-discovery add-ons). They wipe the
 database each run, so they refuse to run against Neon or any database without `test` in its name.
 
@@ -197,12 +210,15 @@ backend/
   src/ranking/rank.ts  scores web search results and picks the official website (CHUD-48)
   test/api.test.ts     integration tests
   test/rank.test.ts    unit tests for the ranking rules
+  test/search.test.ts  web search tests with the Brave API mocked
+  test/setup.ts        fake Brave settings, loaded before every test file
+  test/fixtures/       sample search results for each entity type
 ```
 
 ## AI use
 
 - **AI used:** Yes.
-- **Tool and model:** Claude Code (Sonnet 5.5; Opus 5.5 for CHUD-48).
+- **Tool and model:** Claude Code (Sonnet 5.5; Opus 5.5 for CHUD-48 and CHUD-32).
 - **How it was made:** written with AI help from Claude Code, directed by Irene Riva. Working from Irene's requests,
   Ryan's schema (`DataBase/database_schema.sql`) and Neon's documentation, Claude Code wrote the code in `backend/`
   (routes, validation, error handling, database helpers), the integration tests and this README. That includes the
@@ -214,6 +230,9 @@ backend/
   and the unit tests in `test/rank.test.ts`, and reviewed the project `.gitignore`. Ryan set the requirements,
   reviewed the code, and ran the type check and unit tests; the scoring weights and thresholds still need tuning
   against real search results.
+
+  For CHUD-32, directed by Ryan Griffiths: Claude Code wrote the test setup, sample search results and the search and
+  ranking tests (`test/`) and the "Test it" docs. Ryan reviewed them and ran `npm test`.
 - **Peer review:** pending, in the pull request.
 
 Every source file starts with a short AI-use note that points here.

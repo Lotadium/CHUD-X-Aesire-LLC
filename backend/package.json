@@ -9,7 +9,7 @@
     "local": "node --env-file=.env functions/local.ts",
     "deploy": "neon deploy",
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"test/**/*.test.ts\""
+    "test": "node --import ./test/setup.ts --test \"test/**/*.test.ts\""
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",
