@@ -8,10 +8,10 @@
 // database whose name does not contain "test".
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { after, before, describe, it } from "node:test";
+import { after, before, describe, it, mock } from "node:test";
 import pg from "pg";
-import { createApp } from "../src/app.ts";
 
+let createApp: Function;
 const url = process.env.TEST_DATABASE_URL;
 const skip = url ? false : "set TEST_DATABASE_URL to run the API tests";
 
@@ -21,6 +21,15 @@ if (url) {
     throw new Error("Refusing to run tests: TEST_DATABASE_URL must be a local database with 'test' in its name");
   }
 }
+
+before(async () => {
+  mock.property(process, "env", {
+      ...process.env,
+      BRAVE_API_KEY: "MOCK_BRAVE_API_KEY",
+      BRAVE_SEARCH_ENDPOINT: "MOCK_BRAVE_SEARCH_ENDPOINT"
+  });
+  ({ createApp } = await import("../src/app.ts"));
+});
 
 describe("CHUD API", { skip }, () => {
   const pool = new pg.Pool({ connectionString: url, max: 5 });
@@ -45,6 +54,7 @@ describe("CHUD API", { skip }, () => {
       "database_schema.sql",
       "database_add_flag_columns.sql", // is_flagged / flag_reason (CHUD-10)
       "database_add_website_discovery.sql", // website_status / website_source / candidates (CHUD-30)
+      "database_add_search_usage.sql", // web_search_log (CHUD-49)
     ]) {
       await pool.query(readFileSync(new URL(`../../DataBase/${file}`, import.meta.url), "utf8"));
     }
@@ -731,6 +741,26 @@ describe("CHUD API", { skip }, () => {
       assert.equal(kept.body.website_source, "MANUAL");
     });
 
+    it("saving the edit form on an entity under review leaves the review alone", async () => {
+      const id = await create("Under Review With Website");
+      await call("PUT", `/api/organizations/${id}/website`, { url: "https://has.example" });
+      await discover(id, { confidence: "low", candidates: [{ url: "https://maybe.example" }], confirm_overwrite: true });
+      const before = (await call("GET", `/api/organizations/${id}`)).body;
+      assert.equal(before.website_status, "NEEDS_REVIEW");
+
+      // The form sends the website on every save, even when only the name changed.
+      const saved = await call("PATCH", `/api/organizations/${id}`, {
+        name: "Under Review With Website (renamed)",
+        domain_id: domain,
+        website_url: "https://has.example",
+      });
+      assert.equal(saved.status, 200);
+      assert.equal(saved.body.name, "Under Review With Website (renamed)");
+      assert.equal(saved.body.website_status, "NEEDS_REVIEW");
+      assert.equal(saved.body.website_candidates.length, 1);
+      assert.equal(saved.body.website_url, "https://has.example");
+    });
+
     it("rejecting all suggestions on an entity with a website keeps the website", async () => {
       const id = await create("Has Website");
       await call("PUT", `/api/organizations/${id}/website`, { url: "https://keep.example" });
@@ -789,6 +819,78 @@ describe("CHUD API", { skip }, () => {
       await pool.query(sql); // second run changes nothing
       const versionAfter = (await pool.query("SELECT version FROM organization WHERE organization_id = $1", [had])).rows[0].version;
       assert.equal(versionAfter, versionBefore);
+    });
+  });
+
+  // CHUD-49 tests below: written with help from Claude (Anthropic), directed by Rachel Wong.
+  describe("web search usage (CHUD-49)", () => {
+    const monthStart = "date_trunc('month', now() AT TIME ZONE 'America/Los_Angeles') AT TIME ZONE 'America/Los_Angeles'";
+
+    before(() => pool.query("DELETE FROM web_search_log"));
+
+    it("starts at 0 for this month, with no limit unless one is configured", async () => {
+      delete process.env.WEB_SEARCH_MONTHLY_LIMIT;
+      const res = await call("GET", "/api/search-usage");
+      assert.equal(res.status, 200);
+      assert.match(res.body.month, /^\d{4}-\d{2}$/);
+      assert.equal(res.body.used, 0);
+      assert.equal(res.body.limit, null);
+    });
+
+    it("counts each recorded search", async () => {
+      await recordSearch(pool, { provider: "brave", searchedBy: "tester" });
+      await recordSearch(pool);
+      const res = await call("GET", "/api/search-usage");
+      assert.equal(res.body.used, 2);
+    });
+
+    it("only counts searches from the current month (Aesire's local time)", async () => {
+      await pool.query(`INSERT INTO web_search_log (searched_at) VALUES (${monthStart} - interval '1 second')`);
+      await pool.query(`INSERT INTO web_search_log (searched_at) VALUES (now() - interval '40 days')`);
+      await pool.query(`INSERT INTO web_search_log (searched_at) VALUES (${monthStart})`);
+      const res = await call("GET", "/api/search-usage");
+      assert.equal(res.body.used, 3); // the 2 from before plus the one exactly at the start of the month
+    });
+
+    it("links a search to the entity it was for", async () => {
+      const org = await call("POST", "/api/organizations", { domain_id: domainId, name: "Search Log Test Agency" });
+      await recordSearch(pool, { organizationId: org.body.organization_id });
+      const { rows } = await pool.query("SELECT count(*)::int AS n FROM web_search_log WHERE organization_id = $1", [org.body.organization_id]);
+      assert.equal(rows[0].n, 1);
+    });
+
+    it("reports the monthly limit from WEB_SEARCH_MONTHLY_LIMIT", async () => {
+      process.env.WEB_SEARCH_MONTHLY_LIMIT = "500";
+      try {
+        const res = await call("GET", "/api/search-usage");
+        assert.equal(res.body.limit, 500);
+      } finally {
+        delete process.env.WEB_SEARCH_MONTHLY_LIMIT;
+      }
+    });
+
+    it("counts a web search made through POST /api/web-search", async () => {
+      const before = (await call("GET", "/api/search-usage")).body.used;
+      const realFetch = globalThis.fetch;
+      // Pretend to be the search provider, so the test makes no paid request
+      globalThis.fetch = (async () =>
+        new Response(JSON.stringify({ web: { results: [] } }), { status: 200 })) as typeof fetch;
+      try {
+        const res = await call("POST", "/api/web-search", { firstName: "Test", lastName: "Person" });
+        assert.equal(res.status, 200);
+      } finally {
+        globalThis.fetch = realFetch;
+      }
+      const after = (await call("GET", "/api/search-usage")).body.used;
+      assert.equal(after, before + 1);
+    });
+
+    it("ignores a limit that isn't a whole number", () => {
+      assert.equal(monthlyLimit("abc"), null);
+      assert.equal(monthlyLimit(""), null);
+      assert.equal(monthlyLimit("12.5"), null);
+      assert.equal(monthlyLimit("-1"), null);
+      assert.equal(monthlyLimit("1000"), 1000);
     });
   });
 });

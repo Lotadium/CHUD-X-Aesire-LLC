@@ -9,7 +9,7 @@
 import * as fakeApi from "./fakeApi";
 import * as realApi from "./realApi";
 
-export type { Organization, Contact, Flag } from "./fakeApi";
+export type { Organization, Contact, Flag, WebsiteSource, WebsiteStatusValue, UpdateOptions } from "./fakeApi";
 
 const useReal = import.meta.env.VITE_USE_REAL_API === "true";
 const api = useReal ? realApi : fakeApi;
