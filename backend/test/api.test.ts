@@ -8,11 +8,10 @@
 // database whose name does not contain "test".
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { after, before, describe, it } from "node:test";
+import { after, before, describe, it, mock } from "node:test";
 import pg from "pg";
-import { createApp } from "../src/app.ts";
-import { monthlyLimit, recordSearch } from "../src/searchUsage.ts";
 
+let createApp: Function;
 const url = process.env.TEST_DATABASE_URL;
 const skip = url ? false : "set TEST_DATABASE_URL to run the API tests";
 
@@ -22,6 +21,15 @@ if (url) {
     throw new Error("Refusing to run tests: TEST_DATABASE_URL must be a local database with 'test' in its name");
   }
 }
+
+before(async () => {
+  mock.property(process, "env", {
+      ...process.env,
+      BRAVE_API_KEY: "MOCK_BRAVE_API_KEY",
+      BRAVE_SEARCH_ENDPOINT: "MOCK_BRAVE_SEARCH_ENDPOINT"
+  });
+  ({ createApp } = await import("../src/app.ts"));
+});
 
 describe("CHUD API", { skip }, () => {
   const pool = new pg.Pool({ connectionString: url, max: 5 });
@@ -731,6 +739,26 @@ describe("CHUD API", { skip }, () => {
       assert.equal(kept.body.website_status, "FOUND");
       assert.deepEqual(kept.body.website_candidates, []);
       assert.equal(kept.body.website_source, "MANUAL");
+    });
+
+    it("saving the edit form on an entity under review leaves the review alone", async () => {
+      const id = await create("Under Review With Website");
+      await call("PUT", `/api/organizations/${id}/website`, { url: "https://has.example" });
+      await discover(id, { confidence: "low", candidates: [{ url: "https://maybe.example" }], confirm_overwrite: true });
+      const before = (await call("GET", `/api/organizations/${id}`)).body;
+      assert.equal(before.website_status, "NEEDS_REVIEW");
+
+      // The form sends the website on every save, even when only the name changed.
+      const saved = await call("PATCH", `/api/organizations/${id}`, {
+        name: "Under Review With Website (renamed)",
+        domain_id: domain,
+        website_url: "https://has.example",
+      });
+      assert.equal(saved.status, 200);
+      assert.equal(saved.body.name, "Under Review With Website (renamed)");
+      assert.equal(saved.body.website_status, "NEEDS_REVIEW");
+      assert.equal(saved.body.website_candidates.length, 1);
+      assert.equal(saved.body.website_url, "https://has.example");
     });
 
     it("rejecting all suggestions on an entity with a website keeps the website", async () => {

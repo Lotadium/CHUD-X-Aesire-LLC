@@ -9,7 +9,9 @@ import { collectFields, failIfInvalid, type Parsed, type Schema } from "./valida
  * endpoint and the general organization edit, so they can never disagree.
  *
  * - A URL that is already set is never replaced (or cleared) unless the caller confirms.
- * - Sending the URL the entity already has changes the URL not at all, but settles a pending review.
+ * - Sending the URL the entity already has changes the URL not at all. When `settleReview` is true (the explicit
+ *   website endpoint) it also settles a pending review; the general edit form sends the URL on every save,
+ *   so it must not do that by accident.
  * - A change is recorded as a manual one: source MANUAL, status FOUND, and the time it changed.
  *   Clearing the URL puts the entity back to NOT_SEARCHED.
  * - Any candidate URLs waiting for review are dropped, because a person has now decided.
@@ -23,6 +25,7 @@ export async function applyWebsiteChange(
   organizationId: number,
   fields: Parsed,
   confirmOverwrite: boolean,
+  settleReview = false,
 ): Promise<void> {
   // Lock the row so two people changing the URL at once cannot both pass the check.
   const current = await one<{ website_url: string | null; website_status: string }>(
@@ -37,9 +40,9 @@ export async function applyWebsiteChange(
 
   if (next === existing) {
     delete fields.website_url; // the URL itself does not change
-    // Keeping the URL the entity already has also settles a pending review: it is FOUND again
+    // Keeping the URL the entity already has, on purpose, settles a pending review: it is FOUND again
     // and the suggestions that were waiting are dropped.
-    if (existing && current.website_status !== "FOUND") {
+    if (settleReview && existing && current.website_status !== "FOUND") {
       fields.website_status = "FOUND";
       await db.query("DELETE FROM website_candidate WHERE organization_id = $1", [organizationId]);
     }
