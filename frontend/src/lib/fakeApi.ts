@@ -2,6 +2,7 @@
 // When the real API is done, replace the inside of each function with a fetch() call.
 import type { z } from "zod";
 import { organizationSchema, contactSchema } from "./validation";
+import { sameWebsite } from "./website";
 
 // Wait a little, like a real network request would
 const delay = () => new Promise((resolve) => setTimeout(resolve, 300));
@@ -12,13 +13,32 @@ const delay = () => new Promise((resolve) => setTimeout(resolve, 300));
 // is FLAGGED instead; it stays in the database with its history kept.
 export type Flag = { flagged: boolean; flagReason: string };
 
-// The shape of an organization: the form fields plus an id and its flag
-export type Organization = z.infer<typeof organizationSchema> & { id: string } & Flag;
+// Where the saved website came from (CHUD-31):
+//   "auto"   = found by website discovery (CHUD-29/30)
+//   "manual" = typed in by staff on the entity form
+//   ""       = no website saved
+export type WebsiteSource = "auto" | "manual" | "";
+// Where website discovery stands for this entity (Irene's CHUD-30 API, `website_status`)
+export type WebsiteStatusValue = "NOT_SEARCHED" | "FOUND" | "NEEDS_REVIEW" | "NOT_FOUND" | "";
+export type WebsiteInfo = {
+  websiteSource: WebsiteSource;
+  websiteUpdatedAt: string; // date as ISO text, or ""
+  websiteStatus: WebsiteStatusValue;
+  websiteSuggestions: number; // suggested websites waiting for review (0 to 3)
+};
+
+// Like the real API: a website that is already set is only replaced or cleared when confirmed
+export type UpdateOptions = { confirmOverwrite?: boolean };
+
+// The shape of an organization: the form fields plus an id, its flag, and where its website came from
+export type Organization = z.infer<typeof organizationSchema> & { id: string } & Flag & WebsiteInfo;
 
 // Pretend database (resets every time the page reloads)
 const organizations: Organization[] = [
-  { id: "1", name: "Sacramento Metro Fire", domainId: "1", websiteUrl: "https://metrofire.ca.gov/", flagged: false, flagReason: "" },
-  { id: "2", name: "Folsom Water District", domainId: "2", websiteUrl: "", flagged: false, flagReason: "" },
+  { id: "1", name: "Sacramento Metro Fire", domainId: "1", websiteUrl: "https://metrofire.ca.gov/", flagged: false, flagReason: "",
+    websiteSource: "auto", websiteUpdatedAt: "2026-10-20T19:00:00Z", websiteStatus: "FOUND", websiteSuggestions: 0 },
+  { id: "2", name: "Folsom Water District", domainId: "2", websiteUrl: "", flagged: false, flagReason: "",
+    websiteSource: "", websiteUpdatedAt: "", websiteStatus: "NOT_SEARCHED", websiteSuggestions: 0 },
 ];
 
 // Options for the "Domain" dropdown (Ryan's domain table)
@@ -40,11 +60,34 @@ export async function getOrganization(id: string): Promise<Organization> {
   return { ...org };
 }
 
-export async function updateOrganization(id: string, changes: Partial<Organization>): Promise<Organization> {
+export async function updateOrganization(id: string, changes: Partial<Organization>, options: UpdateOptions = {}): Promise<Organization> {
   await delay();
   const index = organizations.findIndex((o) => o.id === id);
   if (index === -1) throw new Error("Organization not found.");
-  organizations[index] = { ...organizations[index], ...changes, id };
+  const before = organizations[index];
+  const next = { ...before, ...changes, id };
+  // Website rules copied from Irene's API (backend/src/website.ts):
+  if (changes.websiteUrl !== undefined) {
+    if (sameWebsite(changes.websiteUrl, before.websiteUrl)) {
+      next.websiteUrl = before.websiteUrl; // no change; keeping it settles a pending review
+      if (before.websiteUrl && before.websiteStatus === "NEEDS_REVIEW") {
+        next.websiteStatus = "FOUND";
+        next.websiteSuggestions = 0;
+      }
+    } else {
+      // An existing website is only replaced or cleared when the user confirmed it
+      if (before.websiteUrl !== "" && !options.confirmOverwrite) {
+        throw new Error(`This entity already has a website (${before.websiteUrl}). Confirm to replace it.`);
+      }
+      // A website typed in on the form is "manual"; clearing it removes the source and date
+      const cleared = changes.websiteUrl === "";
+      next.websiteSource = cleared ? "" : "manual";
+      next.websiteUpdatedAt = cleared ? "" : new Date().toISOString();
+      next.websiteStatus = cleared ? "NOT_SEARCHED" : "FOUND";
+      next.websiteSuggestions = 0;
+    }
+  }
+  organizations[index] = next;
   return { ...organizations[index] };
 }
 

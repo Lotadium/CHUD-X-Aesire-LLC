@@ -51,7 +51,7 @@ export const Brave: SearchProvider<BraveRequestConfig> = {
         count: config.limit,
         spellcheck: false,
         operators: true,
-        safesearch: config.safesearch
+        safesearch: config.safesearch ? "strict" : "off"
       })
     });
     const data = await response.json();
