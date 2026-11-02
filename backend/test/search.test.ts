@@ -2,7 +2,7 @@
 // Tests for the website discovery search (CHUD-29) and the search -> ranking -> save hand-off
 // (CHUD-48 -> CHUD-30). The Brave API is always mocked: `fetch` is replaced in every test, and
 // test/setup.ts points the provider at a fake key and an endpoint that can never resolve.
-// No database or network needed.
+// No database or network needed: the search route gets a fake pool (see fakePool).
 import "./setup.ts"; // must come first: src/search.ts reads the Brave settings when it is imported
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it, mock } from "node:test";
@@ -17,15 +17,42 @@ import { SAMPLES } from "./fixtures/search-results.ts";
 
 type FetchCall = { url: string; init: RequestInit };
 
-/** Replace fetch with a fake Brave API that answers with `results` (or an HTTP error) and records each call. */
+/**
+ * Replace fetch with a fake Brave API that answers with `results` (or an HTTP error) and records each call.
+ * Errors come back in Brave's JSON error format, which src/search.ts reads for the error message.
+ */
 function mockBrave(answer: SearchResults | { status: number }) {
   const calls: FetchCall[] = [];
   mock.method(globalThis, "fetch", async (url: string | URL, init: RequestInit = {}) => {
     calls.push({ url: String(url), init });
-    if ("status" in answer) return new Response("", { status: answer.status, statusText: "Too Many Requests" });
+    if ("status" in answer) {
+      return Response.json(
+        {
+          type: "ErrorResponse",
+          time: 0,
+          error: { id: "test", status: answer.status, code: "RATE_LIMITED", detail: "Request rate limit exceeded", meta: {} },
+        },
+        { status: answer.status, statusText: "Too Many Requests" },
+      );
+    }
     return Response.json({ web: { results: answer } });
   });
   return calls;
+}
+
+/**
+ * A stand-in for the database pool: the search route only writes one row to web_search_log
+ * per search (CHUD-49), so this records the SQL instead of needing a database.
+ */
+function fakePool() {
+  const queries: { text: string; values?: unknown[] }[] = [];
+  const pool = {
+    async query(text: string, values?: unknown[]) {
+      queries.push({ text, values });
+      return { rows: [], rowCount: 0 };
+    },
+  };
+  return { pool: pool as unknown as pg.Pool, queries };
 }
 
 // Anything that reaches fetch without mockBrave fails loudly instead of going out to the internet.
@@ -82,16 +109,21 @@ describe("Brave provider (mocked)", () => {
     assert.equal(body.count, 10);
   });
 
-  it("throws when the API answers with an error", async () => {
+  it("throws with Brave's status, code and message when the API answers with an error", async () => {
     mockBrave({ status: 429 });
-    await assert.rejects(Brave.search("anything", { limit: 10, safesearch: false }), /429/);
+    await assert.rejects(
+      Brave.search("anything", { limit: 10, safesearch: false }),
+      /Request Error 429 \(RATE_LIMITED\): Request rate limit exceeded/,
+    );
   });
 });
 
 describe("POST /api/web-search (mocked)", () => {
-  // The search route never touches the database, so the pool is never connected.
-  const pool = new pg.Pool({ connectionString: "postgres://unused.invalid/test" });
+  const { pool, queries } = fakePool();
   const app = createApp(pool);
+  beforeEach(() => {
+    queries.length = 0;
+  });
   const search = (body: unknown) =>
     app.request("/api/web-search", {
       method: "POST",
@@ -110,6 +142,19 @@ describe("POST /api/web-search (mocked)", () => {
     assert.equal(JSON.parse(String(calls[0].init.body)).count, 10);
   });
 
+  it("logs each search for the monthly usage count (CHUD-49)", async () => {
+    mockBrave(SAMPLES[2].results);
+    await app.request("/api/web-search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-User": "ryan" },
+      body: JSON.stringify({ firstName: "Ana", lastName: "Lopez" }),
+    });
+
+    assert.equal(queries.length, 1);
+    assert.match(queries[0].text, /INSERT INTO web_search_log/);
+    assert.deepEqual(queries[0].values, [null, "brave", "ryan"]);
+  });
+
   it("rejects a request without a first and last name, without searching", async () => {
     const calls = mockBrave([]);
     const res = await search({ organizationName: "City of Sacramento" });
@@ -117,6 +162,7 @@ describe("POST /api/web-search (mocked)", () => {
     assert.equal(res.status, 400);
     assert.match((await res.json()).error, /firstName, lastName/);
     assert.equal(calls.length, 0, "no search credit used");
+    assert.equal(queries.length, 0, "nothing logged");
   });
 
   it("returns 500 when the search provider fails", async () => {
