@@ -2,14 +2,25 @@ import type { SearchResults, SearchProvider } from "./search/provider.ts";
 
 if (!process.env.BRAVE_API_KEY) throw new Error("Failed to build provider: BRAVE_API_KEY is missing.");
 if (!process.env.BRAVE_SEARCH_ENDPOINT) throw new Error("Failed to build provider: BRAVE_SEARCH_ENDPOINT is missing.");
-interface BraveResponseData {
+interface BraveRequestConfig {
+  limit: number;
+  safesearch: boolean;
+}
+interface BraveSearchResponse {
   web: {
     results: SearchResults;
   };
 }
-interface BraveRequestConfig {
-  limit: number;
-  safesearch: boolean;
+interface BraveErrorResponse<ErrorMetadata> {
+  type: "ErrorResponse",
+  time: number,
+  error: {
+    id: string,
+    status: number,
+    detail: string,
+    code: string,
+    meta: ErrorMetadata
+  }
 }
 export const Brave: SearchProvider<BraveRequestConfig> = {
   endpoint: process.env.BRAVE_SEARCH_ENDPOINT,
@@ -40,17 +51,22 @@ export const Brave: SearchProvider<BraveRequestConfig> = {
         count: config.limit,
         spellcheck: false,
         operators: true,
-        safesearch: config.safesearch
+        safesearch: config.safesearch ? "strict" : "off"
       })
     });
+    const data = await response.json();
     if (response.ok) {
-      const body = await response.json() as BraveResponseData;
+      const body = data as BraveSearchResponse;
       const results: SearchResults = [];
       for (const result of body.web.results)
         results.push(result);
       return results;
     } else {
-      throw new Error(`Request Error ${response.status}: ${response.statusText || "unknown"}`);
+      const body = data as BraveErrorResponse<unknown>;
+      const status = body.error.status ?? response.status;
+      const text = body.error.detail || response.statusText || "unknown";
+      const codeStr = body.error.code ?? "";
+      throw new Error(`Request Error ${status}${codeStr ? ` (${codeStr})` : ""}: ${text}`);
     }
   }
 };

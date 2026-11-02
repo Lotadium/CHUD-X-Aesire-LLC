@@ -1,11 +1,13 @@
 import { Hono } from "hono";
+import type { Pool } from "pg";
 import type { AppEnv } from "../app.ts";
 import { readJson } from "../http.ts";
 import { type SearchContext, queryBuilder } from "../search/query.ts";
 import { Brave } from "../search.ts";
+import { recordSearch } from "../searchUsage.ts";
 
 /** searches the web for candidates of an entity's official website */
-export function webSearchRoutes() {
+export function webSearchRoutes(pool: Pool) {
   const routes = new Hono<AppEnv>();
   const maxCandidates = 10;
   const safesearchEnabled = false;
@@ -21,6 +23,8 @@ export function webSearchRoutes() {
           safesearch: safesearchEnabled
         });
         REQUESTS_MADE += 1;
+        // CHUD-49: log every paid search so GET /api/search-usage can count this month's searches
+        await recordSearch(pool, { provider: "brave", searchedBy: c.get("actor").name });
         return c.json(results);
       } catch (error) {
         return c.json({ error: `Failed to access search provider API${ error instanceof Error ? ": " + error.message : ""}`}, 500);
