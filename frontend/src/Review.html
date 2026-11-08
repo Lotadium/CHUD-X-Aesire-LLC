@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Website Match Review</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --text: #1c2330; --muted: #5d6778; --border: #dde1e8;
+    --accent: #2457d6; --accent-soft: #e8eefc; --danger: #b3261e; --ok: #1b7f4b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14171c; --card: #1c2027; --text: #e8ebf0; --muted: #98a2b3; --border: #2e343e;
+            --accent: #7ea2ff; --accent-soft: #232d47; --danger: #ff8a80; --ok: #6fd6a0; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  h1 { font-size: 22px; margin: 0; }
+  .count { background: var(--accent-soft); color: var(--accent); font-weight: 600;
+           padding: 2px 10px; border-radius: 999px; font-size: 14px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+          padding: 16px; margin-bottom: 14px; transition: opacity .25s, transform .25s; }
+  .card.leaving { opacity: 0; transform: translateX(16px); }
+  .card h2 { font-size: 17px; margin: 0 0 2px; }
+  .meta { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+  fieldset { border: 0; padding: 0; margin: 0; }
+  legend { position: absolute; left: -9999px; }
+  .opt { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border: 1px solid var(--border);
+         border-radius: 8px; margin-bottom: 8px; cursor: pointer; }
+  .opt:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+  .opt input[type=radio] { margin-top: 4px; }
+  .opt .body { flex: 1; min-width: 0; }
+  .title { font-weight: 600; overflow-wrap: anywhere; }
+  .url { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .open { font-size: 13px; color: var(--accent); white-space: nowrap; text-decoration: none; padding-top: 2px; }
+  .open:hover { text-decoration: underline; }
+  .manual { margin: 0; }
+  .manual input[type=url] { width: 100%; margin-top: 6px; padding: 8px 10px; font: inherit;
+         border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); }
+  .manual input[type=url]:disabled { opacity: .5; }
+  .err { color: var(--danger); font-size: 13px; margin-top: 4px; min-height: 0; }
+  .actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+  button { font: inherit; font-weight: 600; padding: 8px 18px; border-radius: 6px; border: 0;
+           background: var(--accent); color: #fff; cursor: pointer; }
+  @media (prefers-color-scheme: dark) { button { color: #0e1320; } }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .status { font-size: 13px; color: var(--muted); }
+  .status.bad { color: var(--danger); }
+  .empty, .banner { text-align: center; padding: 48px 16px; border: 1px dashed var(--border);
+          border-radius: 10px; color: var(--muted); }
+  .empty strong { display: block; color: var(--ok); font-size: 18px; margin-bottom: 4px; }
+  .banner { border-style: solid; color: var(--danger); padding: 16px; margin-bottom: 14px; text-align: left; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Website match review</h1>
+    <span class="count" id="count" aria-live="polite">…</span>
+  </header>
+  <p class="sub">Entities whose website match was flagged as low-confidence. Pick the correct site, enter one manually, or mark that none was found.</p>
+  <div id="error" class="banner hidden" role="alert"></div>
+  <div id="list"></div>
+  <div id="empty" class="empty hidden">
+    <strong>All caught up</strong>
+    No entities need website review right now.
+  </div>
+</main>
+
+<script>
+
+// mock up will change when correct info is applied//
+
+
+
+const USE_MOCK = true;
+const API_BASE = "";                                   // e.g. "https://internal.example.com"
+const LIST_URL = `${API_BASE}/api/entities?website_status=needs_review`;   // CHUD-48 output (assumed)
+const SAVE_URL = (id) => `${API_BASE}/api/entities/${encodeURIComponent(id)}/website`; // CHUD-30 (assumed)
+
+/* Expected list response (assumed):
+   [{ id, name, location?, candidates: [{ url, title }] }]
+   Expected save request (assumed): PUT { website: "<url>" | null, status: "confirmed" | "none_found" } */
+
+const MOCK_DATA = [
+  { id: "e-101", name: "Harbor Street Bakery", location: "Portland, OR", candidates: [
+    { url: "https://harborstreetbakery.com", title: "Harbor Street Bakery | Fresh bread daily" },
+    { url: "https://harborstreet.net", title: "Harbor Street Properties" },
+    { url: "https://yelp.com/biz/harbor-street-bakery-portland", title: "Harbor Street Bakery - Yelp" } ] },
+  { id: "e-102", name: "Delgado & Park LLP", location: "Austin, TX", candidates: [
+    { url: "https://delgadopark.law", title: "Delgado & Park LLP — Attorneys at Law" },
+    { url: "https://delgadoandpark.com", title: "Domain for sale" } ] },
+  { id: "e-103", name: "Northwind Community Garden", location: "Minneapolis, MN", candidates: [] },
+];
+
+const api = {
+  async list() {
+    if (USE_MOCK) { await sleep(300); return structuredClone(MOCK_DATA); }
+    const r = await fetch(LIST_URL, { headers: { Accept: "application/json" } });
+    if (!r.ok) throw new Error(`Could not load entities (${r.status})`);
+    return r.json();
+  },
+  async save(id, website) {
+    if (USE_MOCK) { await sleep(400); return; }
+    const r = await fetch(SAVE_URL(id), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ website, status: website ? "confirmed" : "none_found" }),
+    });
+    if (!r.ok) throw new Error(`Save failed (${r.status})`);
+  },
+};
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const $ = (s, el = document) => el.querySelector(s);
+const listEl = $("#list"), countEl = $("#count"), emptyEl = $("#empty"), errEl = $("#error");
+let remaining = 0;
+
+function updateCount() {
+  countEl.textContent = remaining === 1 ? "1 needs review" : `${remaining} need review`;
+  emptyEl.classList.toggle("hidden", remaining !== 0);
+}
+
+function normalizeUrl(raw) {
+  const v = raw.trim();
+  if (!v) return null;
+  try {
+    const u = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? v : "https://" + v);
+    if (!/^https?:$/.test(u.protocol) || !u.hostname.includes(".")) return null;
+    return u.href;
+  } catch { return null; }
+}
+
+function el(tag, props = {}, ...kids) {
+  const n = Object.assign(document.createElement(tag), props);
+  kids.forEach((k) => n.append(k));
+  return n;
+}
+
+function renderCard(entity) {
+  const name = `choice-${entity.id}`;
+  const card = el("section", { className: "card" });
+  card.append(el("h2", { textContent: entity.name }));
+  card.append(el("div", { className: "meta", textContent: [entity.location, `ID ${entity.id}`].filter(Boolean).join(" · ") }));
+
+  const fs = el("fieldset");
+  fs.append(el("legend", { textContent: `Website for ${entity.name}` }));
+
+  // (max 3)
+  (entity.candidates || []).slice(0, 3).forEach((c) => {
+    const radio = el("input", { type: "radio", name, value: c.url });
+    const link = el("a", { className: "open", href: c.url, target: "_blank", rel: "noopener noreferrer", textContent: "Open ↗" });
+    link.setAttribute("aria-label", `Open ${c.title || c.url} in a new tab`);
+    link.addEventListener("click", (e) => e.stopPropagation());
+    const body = el("div", { className: "body" },
+      el("div", { className: "title", textContent: c.title || "(no title)" }),
+      el("div", { className: "url", textContent: c.url }));
+    fs.append(el("label", { className: "opt" }, radio, body, link));
+  });
+
+  // Manual add on
+  const manualRadio = el("input", { type: "radio", name, value: "__manual" });
+  const manualInput = el("input", { type: "url", placeholder: "https://example.com", disabled: true });
+  manualInput.setAttribute("aria-label", "Website URL");
+  const manualErr = el("div", { className: "err" });
+  fs.append(el("label", { className: "opt" }, manualRadio,
+    el("div", { className: "body manual" }, el("div", { className: "title", textContent: "Enter a URL manually" }), manualInput, manualErr)));
+
+  // None
+  const noneRadio = el("input", { type: "radio", name, value: "__none" });
+  fs.append(el("label", { className: "opt" }, noneRadio,
+    el("div", { className: "body" }, el("div", { className: "title", textContent: "No website found" }))));
+
+  card.append(fs);
+
+  const saveBtn = el("button", { type: "button", textContent: "Save", disabled: true });
+  const status = el("span", { className: "status", role: "status" });
+  card.append(el("div", { className: "actions" }, saveBtn, status));
+
+  const selected = () => fs.querySelector("input[type=radio]:checked")?.value;
+  const refresh = () => {
+    const sel = selected();
+    manualInput.disabled = sel !== "__manual";
+    if (sel === "__manual") manualInput.focus({ preventScroll: true });
+    manualErr.textContent = "";
+    saveBtn.disabled = !sel || (sel === "__manual" && !manualInput.value.trim());
+  };
+  fs.addEventListener("change", refresh);
+  manualInput.addEventListener("input", refresh);
+
+  saveBtn.addEventListener("click", async () => {
+    const sel = selected();
+    let website;
+    if (sel === "__none") website = null;
+    else if (sel === "__manual") {
+      website = normalizeUrl(manualInput.value);
+      if (!website) { manualErr.textContent = "Enter a valid web address, e.g. https://example.com"; return; }
+    } else website = sel;
+
+    saveBtn.disabled = true; fs.disabled = true;
+    status.className = "status"; status.textContent = "Saving…";
+    try {
+      await api.save(entity.id, website);
+      card.classList.add("leaving");
+      setTimeout(() => { card.remove(); remaining--; updateCount(); }, 250);
+    } catch (e) {
+      fs.disabled = false; refresh();
+      status.className = "status bad"; status.textContent = e.message || "Save failed. Try again.";
+    }
+  });
+
+  return card;
+}
+
+(async function init() {
+  try {
+    const entities = await api.list();
+    remaining = entities.length;
+    entities.forEach((e) => listEl.append(renderCard(e)));
+    updateCount();
+  } catch (e) {
+    countEl.textContent = "–";
+    errEl.textContent = e.message || "Could not load entities.";
+    errEl.classList.remove("hidden");
+  }
+})();
+</script>
+</body>
+</html>
