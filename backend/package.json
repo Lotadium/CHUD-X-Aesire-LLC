@@ -9,8 +9,8 @@
     "local": "node --env-file=.env functions/local.ts",
     "deploy": "neon deploy",
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"test/**/api.test.ts\"",
-    "test:contact": "node --experimental-strip-types \"test/crawler.test.ts\""
+    "test": "node --test \"test/**/*.test.ts\"",
+    "test:contact": "node --experimental-strip-types \"test/crawler.live.ts\""
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",
