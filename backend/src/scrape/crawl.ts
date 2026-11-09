@@ -39,9 +39,10 @@ export function* crawlPage(page: DOMTree, name: ContactName, crawlDepth: number)
 export async function getPageDOM(url: string, userAgent: string, timeoutMs: number): Promise<DOMTree | null> {
   const response = await fetch(url, {
     headers: {"User-Agent": userAgent},
-    signal: AbortSignal.timeout(timeoutMs)
+    signal: AbortSignal.timeout(timeoutMs),
+    redirect: "manual"
   });
-  if (!response.ok) return null;
+  if (response.type === "opaqueredirect" || !response.ok) return null;
   const html = await response.text();
   const dom = cheerio.load(html);
   return dom;
