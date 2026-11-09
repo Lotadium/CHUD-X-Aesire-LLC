@@ -36,8 +36,11 @@ export function* crawlPage(page: DOMTree, name: ContactName, crawlDepth: number)
     yield* crawled as CrawledElements;
 }
 
-export async function getPageDOM(url: string, userAgent: string): Promise<DOMTree | null> {
-  const response = await fetch(url, {headers:{"User-Agent": userAgent}});
+export async function getPageDOM(url: string, userAgent: string, timeoutMs: number): Promise<DOMTree | null> {
+  const response = await fetch(url, {
+    headers: {"User-Agent": userAgent},
+    signal: AbortSignal.timeout(timeoutMs)
+  });
   if (!response.ok) return null;
   const html = await response.text();
   const dom = cheerio.load(html);

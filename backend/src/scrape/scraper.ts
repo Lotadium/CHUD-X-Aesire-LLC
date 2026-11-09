@@ -451,7 +451,7 @@ export async function crawlContact(
 
     try {
       // Reuse the page loader supplied in crawl.ts.
-      const page = await getPageDOM(current.url, config.userAgent);
+      const page = await getPageDOM(current.url, config.userAgent, config.timeoutMs);
 
       if (!page) {
         failures.push({
