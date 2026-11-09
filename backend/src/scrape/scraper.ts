@@ -113,15 +113,11 @@ async function getRobotsPolicy(
       signal: controller.signal,
     });
 
-    if (response.status === 404) {
-      return robotsParser(robotsUrl.href, "");
-    }
+    if (response.status >= 500) throw new Error(`robots file exists, but returned status ${response.status} on retrieval`);
 
-    if (!response.ok) {
-      throw new Error(`robots.txt returned HTTP ${response.status}`);
-    }
+    const robotsText: string = response.status < 400 ? await response.text() : "";
 
-    return robotsParser(robotsUrl.href, await response.text());
+    return robotsParser(robotsUrl.href, robotsText);
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error("robots.txt request timed out");
@@ -412,10 +408,7 @@ export async function crawlContact(
   };
 
   const startUrl = new URL(websiteUrl);
-  const robots = await getRobotsPolicy(startUrl.href, config);
-  const robotsDelay = robots.getCrawlDelay(config.userAgent) ?? 0;
-  const delayMs = Math.max(config.minDelayMs, robotsDelay * 1_000);
-
+  const failures: CrawlFailure[] = [];
   let contact: Contact = {
     name: formatName(target),
     title: NOT_FOUND,
@@ -424,93 +417,106 @@ export async function crawlContact(
     sourceUrl: NOT_FOUND,
   };
   let matched = false;
-
-  const queue: Array<{ url: string; depth: number }> = [
-    { url: startUrl.href, depth: 0 },
-  ];
-  const queued = new Set([startUrl.href]);
   const pagesVisited: string[] = [];
-  const failures: CrawlFailure[] = [];
+  let robots;
+  try {
+    robots = await getRobotsPolicy(startUrl.href, config);
+  } catch (err) {
+    failures.push({
+      url: startUrl.href,
+      reason: err instanceof Error && err.message
+        ? err.message
+        : "Failed on retreiving robots.txt",
+    });
+  }
+  if (robots) {
+    const robotsDelay = robots.getCrawlDelay(config.userAgent) ?? 0;
+    const delayMs = Math.max(config.minDelayMs, robotsDelay * 1_000);
 
-  while (
-    queue.length > 0 &&
-    pagesVisited.length < config.maxPages
-  ) {
-    const current = queue.shift()!;
-    if (current.depth > config.maxDepth) continue;
+    const queue: Array<{ url: string; depth: number }> = [
+      { url: startUrl.href, depth: 0 },
+    ];
+    const queued = new Set([startUrl.href]);
 
-    if (robots.isAllowed(current.url, config.userAgent) === false) {
-      failures.push({
-        url: current.url,
-        reason: "robots.txt disallows this URL",
-      });
-      continue;
-    }
+    while (
+      queue.length > 0 &&
+      pagesVisited.length < config.maxPages
+    ) {
+      const current = queue.shift()!;
+      if (current.depth > config.maxDepth) continue;
 
-    await sleep(delayMs);
-
-    try {
-      // Reuse the page loader supplied in crawl.ts.
-      const page = await getPageDOM(current.url, config.userAgent, config.timeoutMs);
-
-      if (!page) {
+      if (robots.isAllowed(current.url, config.userAgent) === false) {
         failures.push({
           url: current.url,
-          reason: "page could not be loaded",
+          reason: "robots.txt disallows this URL",
         });
         continue;
       }
 
-      pagesVisited.push(current.url);
+      await sleep(delayMs);
 
-      const block = findContactBlock(page, target);
-      if (block) {
-        matched = true;
-        contact = mergeContact(
-          contact,
-          extractContact(page, block, target, current.url),
-        );
-      }
+      try {
+        // Reuse the page loader supplied in crawl.ts.
+        const page = await getPageDOM(current.url, config.userAgent, config.timeoutMs);
 
-      // Stop once this contact's requested fields have been found. If any
-      // field is still missing, continue through allowed same-origin links.
-      if (hasCompleteContactData(contact)) break;
+        if (!page) {
+          failures.push({
+            url: current.url,
+            reason: "page could not be loaded",
+          });
+          continue;
+        }
 
-      if (current.depth >= config.maxDepth) continue;
+        pagesVisited.push(current.url);
 
-      // Reuse getLinks() from crawl.ts, then resolve and restrict its links.
-      for (const rawLink of getLinks(page)) {
-        const link = normalizeLink(
-          rawLink,
-          current.url,
-          startUrl.origin,
-          config.ignoreQueryParameters,
-        );
+        const block = findContactBlock(page, target);
+        if (block) {
+          matched = true;
+          contact = mergeContact(
+            contact,
+            extractContact(page, block, target, current.url),
+          );
+        }
 
-        if (!link || queued.has(link)) continue;
-        if (robots.isAllowed(link, config.userAgent) === false) continue;
+        // Stop once this contact's requested fields have been found. If any
+        // field is still missing, continue through allowed same-origin links.
+        if (hasCompleteContactData(contact)) break;
 
-        queued.add(link);
-        queue.push({
-          url: link,
-          depth: current.depth + 1,
+        if (current.depth >= config.maxDepth) continue;
+
+        // Reuse getLinks() from crawl.ts, then resolve and restrict its links.
+        for (const rawLink of getLinks(page)) {
+          const link = normalizeLink(
+            rawLink,
+            current.url,
+            startUrl.origin,
+            config.ignoreQueryParameters,
+          );
+
+          if (!link || queued.has(link)) continue;
+          if (robots.isAllowed(link, config.userAgent) === false) continue;
+
+          queued.add(link);
+          queue.push({
+            url: link,
+            depth: current.depth + 1,
+          });
+        }
+      } catch (error) {
+        failures.push({
+          url: current.url,
+          reason: error instanceof Error
+            ? error.message
+            : "Unknown crawl failure",
         });
       }
-    } catch (error) {
+    }
+    if (!matched && failures.length === 0) {
       failures.push({
-        url: current.url,
-        reason: error instanceof Error
-          ? error.message
-          : "Unknown crawl failure",
+        url: websiteUrl,
+        reason: "Requested contact was not found on the crawled pages",
       });
     }
-  }
-
-  if (!matched && failures.length === 0) {
-    failures.push({
-      url: websiteUrl,
-      reason: "Requested contact was not found on the crawled pages",
-    });
   }
 
   return {
