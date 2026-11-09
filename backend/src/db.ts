@@ -52,9 +52,10 @@ export async function insertRow<T extends QueryResultRow>(
   table: string,
   fields: Parsed,
   actor: Actor,
+  changedBy: "USER" | "REFRESH" = "USER", // REFRESH marks a row added automatically, not by a person
 ): Promise<T> {
   const columns = [...Object.keys(fields), ...AUDIT_COLUMNS];
-  const values = [...Object.values(fields), "USER", actor.name];
+  const values = [...Object.values(fields), changedBy, actor.name];
   const placeholders = values.map((_, i) => `$${i + 1}`);
   const { rows } = await db.query<T>(
     `INSERT INTO "${table}" (${columns.join(", ")}) VALUES (${placeholders.join(", ")}) RETURNING *`,
