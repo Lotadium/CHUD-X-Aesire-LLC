@@ -1,4 +1,4 @@
-// AI use: written with AI help from OpenAI GPT-5.6 (Luna), directed by Kyle Tran. See "AI use" in backend/README.md
+// AI use: written with AI help from OpenAI GPT-5.6 (Luna), directed by Kyle Tran
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";

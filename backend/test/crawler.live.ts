@@ -1,4 +1,4 @@
-// AI use: written with AI help from OpenAI GPT-5.6 (Luna), directed by Kyle Tran. See "AI use" in backend/README.md
+// AI use: written with AI help from OpenAI GPT-5.6 (Luna), directed by Kyle Tran
 import { parseArgs } from "node:util";
 import { crawlContact } from "../src/scrape/scraper.ts";
 import type { ContactName } from "../src/scrape/scan.ts";
