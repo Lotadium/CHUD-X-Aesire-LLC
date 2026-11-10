@@ -143,6 +143,18 @@ curl -X PUT http://localhost:8787/api/organizations/1 -H "Content-Type: applicat
 Person fields: `prefix`, `first_name` (required), `middle_name`, `last_name` (required), `suffix`,
 `linkedin_url`.
 
+### Activity log (CHUD-38)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/activity` | Newest first. Optional `?action=` (CREATED, MANUAL_UPDATE, FLAGGED, REFRESH_ATTEMPT, REFRESH_SUCCESS) and `?organization_id=`. The entity filter also includes entries about contacts who work at that entity. Each row includes `organization_name` and `person_name` |
+
+Every create and edit above adds one row to `activity_log` (table in `DataBase/database_add_activity_log.sql`),
+in the same transaction as the change, so a failed change logs nothing. Setting `is_flagged: true` is logged as
+FLAGGED; any other edit (including removing a flag) is MANUAL_UPDATE with the changed fields in `detail`. Website
+discovery results are logged as the refresh: REFRESH_SUCCESS when a URL is saved or confirmed, REFRESH_ATTEMPT for
+needs review or no match. Code: `src/activity.ts` (`logActivity`) and `src/routes/activity.ts`.
+
 ## Website discovery (CHUD-30)
 
 Each organization has `website_url` plus: `website_status` (`NOT_SEARCHED` by default, `FOUND`, `NEEDS_REVIEW` or
@@ -233,6 +245,10 @@ backend/
 
   For CHUD-32, directed by Ryan Griffiths: Claude Code wrote the test setup, sample search results and the search and
   ranking tests (`test/`) and the "Test it" docs. Ryan reviewed them and ran `npm test`.
+
+   For CHUD-38, directed by Rachel Wong: working from the ticket's acceptance criteria and the existing routes, Claude wrote the `activity_log` table, `src/activity.ts`, `src/routes/activity.ts`, the logging calls in the routes, and
+  the activity log tests in `test/api.test.ts`. Rachel reviewed the code and ran the tests.
+
 - **Peer review:** pending, in the pull request.
 
 Every source file starts with a short AI-use note that points here.
