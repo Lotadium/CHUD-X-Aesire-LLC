@@ -63,7 +63,16 @@ export async function insertRow<T extends QueryResultRow>(
   return rows[0]!;
 }
 
-/** UPDATE one row by primary key and return it, or undefined if it does not exist. */
+/**
+ * UPDATE one row by primary key and return it, or undefined if it does not exist.
+ *
+ * This is the one write path for every change to an existing record, whether a person made it
+ * (manual edits) or the refresh did (REFRESH), so every change is versioned the same way (CHUD-36).
+ * The database triggers (DataBase/database_add_record_versions.sql) do the versioning:
+ * - a real change bumps `version` and `date_last_updated` and copies the new row into record_history;
+ * - sending the values the record already has creates no version and no history row.
+ * Saving also confirms the record, so `last_verified_at` is set to now either way.
+ */
 export async function updateRow<T extends QueryResultRow>(
   db: Queryable,
   table: string,
@@ -77,8 +86,27 @@ export async function updateRow<T extends QueryResultRow>(
   const assignments = entries.map(([column], i) => `${column} = $${i + 1}`);
   const values = [...entries.map(([, value]) => value), id];
   const { rows } = await db.query<T>(
-    `UPDATE "${table}" SET ${assignments.join(", ")} WHERE ${idColumn} = $${values.length} RETURNING *`,
+    `UPDATE "${table}" SET ${assignments.join(", ")}, last_verified_at = now()
+     WHERE ${idColumn} = $${values.length} RETURNING *`,
     values,
+  );
+  return rows[0];
+}
+
+/**
+ * Confirm a record is still correct without changing it (the refresh, CHUD-35, when nothing differs):
+ * sets `last_verified_at` to now. This creates no version and no history row.
+ * Returns the row, or undefined if it does not exist.
+ */
+export async function verifyRow<T extends QueryResultRow>(
+  db: Queryable,
+  table: string,
+  idColumn: string,
+  id: number,
+): Promise<T | undefined> {
+  const { rows } = await db.query<T>(
+    `UPDATE "${table}" SET last_verified_at = now() WHERE ${idColumn} = $1 RETURNING *`,
+    [id],
   );
   return rows[0];
 }

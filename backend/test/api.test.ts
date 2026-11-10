@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { after, before, describe, it } from "node:test";
 import pg from "pg";
 import { createApp } from "../src/app.ts";
+import { verifyRow } from "../src/db.ts";
 import { monthlyLimit, recordSearch } from "../src/searchUsage.ts";
 const url = process.env.TEST_DATABASE_URL;
 const skip = url ? false : "set TEST_DATABASE_URL to run the API tests";
@@ -46,6 +47,7 @@ describe("CHUD API", { skip }, () => {
       "database_add_flag_columns.sql", // is_flagged / flag_reason (CHUD-10)
       "database_add_website_discovery.sql", // website_status / website_source / candidates (CHUD-30)
       "database_add_search_usage.sql", // web_search_log (CHUD-49)
+      "database_add_record_versions.sql", // no version for unchanged saves, last_verified_at (CHUD-36)
     ]) {
       await pool.query(readFileSync(new URL(`../../DataBase/${file}`, import.meta.url), "utf8"));
     }
@@ -810,6 +812,132 @@ describe("CHUD API", { skip }, () => {
       await pool.query(sql); // second run changes nothing
       const versionAfter = (await pool.query("SELECT version FROM organization WHERE organization_id = $1", [had])).rows[0].version;
       assert.equal(versionAfter, versionBefore);
+    });
+  });
+
+  // CHUD-36 tests below: written with AI help from Claude Code (Opus 5.5), directed by Ryan Griffiths.
+  describe("record versions and dates (CHUD-36)", () => {
+    let id: number;
+    const historyRows = async (table: string, rowId: number) =>
+      (
+        await pool.query(
+          "SELECT version, operation, changed_by_type, changed_by, row_data FROM record_history WHERE table_name = $1 AND row_id = $2 ORDER BY history_id",
+          [table, rowId],
+        )
+      ).rows;
+    const later = (a: string, b: string) => new Date(a).getTime() > new Date(b).getTime();
+
+    before(async () => {
+      id = (await call("POST", "/api/organizations", { domain_id: domainId, name: "Versioned Fire District" })).body
+        .organization_id;
+    });
+
+    it("sets the created, last updated and last verified dates when a record is created", async () => {
+      const org = (await call("GET", `/api/organizations/${id}`)).body;
+      assert.ok(org.date_created, "created");
+      assert.ok(org.date_last_updated, "last updated");
+      assert.ok(org.last_verified_at, "last verified");
+      assert.equal(org.date_last_updated, org.date_created);
+      assert.equal(org.last_verified_at, org.date_created);
+    });
+
+    it("saves a new version on update, keeping the previous values, the time and who made it", async () => {
+      const before = (await call("GET", `/api/organizations/${id}`)).body;
+      const res = await call("PUT", `/api/organizations/${id}`, { name: "Versioned Fire Protection District" }, "editor");
+
+      assert.equal(res.body.version, before.version + 1);
+      assert.ok(later(res.body.date_last_updated, before.date_last_updated), "last updated moves");
+      assert.ok(later(res.body.last_verified_at, before.last_verified_at), "last verified moves");
+      assert.equal(res.body.date_created, before.date_created, "created never changes");
+
+      const rows = await historyRows("organization", id);
+      assert.deepEqual(rows.map((r) => [r.version, r.operation]), [[1, "INSERT"], [2, "UPDATE"]]);
+      assert.equal(rows[0].row_data.name, "Versioned Fire District", "the previous values are kept");
+      assert.equal(rows[1].row_data.name, "Versioned Fire Protection District");
+      assert.equal(rows[1].changed_by, "editor");
+      assert.equal(rows[1].changed_by_type, "USER");
+    });
+
+    it("saves no version when nothing changed, but records that the record was verified", async () => {
+      const before = (await call("GET", `/api/organizations/${id}`)).body;
+      const historyBefore = (await historyRows("organization", id)).length;
+
+      const res = await call("PUT", `/api/organizations/${id}`, { name: before.name }, "someone-else");
+
+      assert.equal(res.status, 200);
+      assert.equal(res.body.version, before.version);
+      assert.equal(res.body.date_last_updated, before.date_last_updated);
+      assert.equal(res.body.updated_by, before.updated_by, "the last change is still credited to its author");
+      assert.ok(later(res.body.last_verified_at, before.last_verified_at), "last verified moves");
+      assert.equal((await historyRows("organization", id)).length, historyBefore, "no history row");
+    });
+
+    it("confirms a record with verifyRow (for the refresh) without a new version", async () => {
+      const before = (await call("GET", `/api/organizations/${id}`)).body;
+      const historyBefore = (await historyRows("organization", id)).length;
+
+      const row = await verifyRow<{ version: number; last_verified_at: Date }>(pool, "organization", "organization_id", id);
+
+      assert.equal(row!.version, before.version);
+      assert.ok(later(row!.last_verified_at.toISOString(), before.last_verified_at));
+      assert.equal((await historyRows("organization", id)).length, historyBefore);
+      assert.equal(await verifyRow(pool, "organization", "organization_id", 99999), undefined);
+    });
+
+    it("records a change made by the refresh as REFRESH", async () => {
+      await call("POST", `/api/organizations/${id}/website/discovery`, { confidence: "high", url: "https://vfd.example" }, "refresh");
+      const rows = await historyRows("organization", id);
+      assert.equal(rows.at(-1).changed_by_type, "REFRESH");
+      assert.equal(rows.at(-1).changed_by, "refresh");
+    });
+
+    it("returns an entity's version history, newest first, with what each version changed", async () => {
+      const res = await call("GET", `/api/organizations/${id}/history`);
+      assert.equal(res.status, 200);
+      const versions = res.body.data.map((e: { version: number }) => e.version);
+      assert.deepEqual(versions, [...versions].sort((a, b) => b - a), "newest first");
+      assert.equal(versions.length, 3, "created, renamed, website found (the unchanged save added nothing)");
+
+      const [found, renamed, created] = res.body.data;
+      assert.equal(found.changed_by_type, "REFRESH");
+      assert.ok(found.changes.some((c: { field: string; to: string }) => c.field === "website_url" && c.to === "https://vfd.example"));
+      assert.deepEqual(renamed.changes, [
+        { field: "name", from: "Versioned Fire District", to: "Versioned Fire Protection District" },
+      ]);
+      assert.equal(renamed.changed_by, "editor");
+      assert.equal(created.operation, "INSERT");
+      assert.deepEqual(created.changes, []);
+      assert.equal(created.data.name, "Versioned Fire District");
+    });
+
+    it("returns a contact's history: the person, their positions and emails together", async () => {
+      const person = (
+        await call("POST", "/api/people", {
+          first_name: "Hana",
+          last_name: "Ito",
+          positions: [{ organization_id: id, title: "Chief" }],
+          emails: [{ address: "hito@vfd.example" }],
+        })
+      ).body;
+      await call("PUT", `/api/positions/${person.positions[0].position_id}`, { title: "Fire Chief" });
+
+      const res = await call("GET", `/api/people/${person.person_id}/history`);
+      assert.equal(res.status, 200);
+      const entries = res.body.data as { record: string; operation: string; changes: { field: string }[] }[];
+      assert.deepEqual(entries.map((e) => [e.record, e.operation]), [
+        ["position", "UPDATE"],
+        ["email", "INSERT"],
+        ["position", "INSERT"],
+        ["person", "INSERT"],
+      ]);
+      assert.deepEqual(entries[0].changes, [{ field: "title", from: "Chief", to: "Fire Chief" }]);
+    });
+
+    it("returns 400 for a bad id and 404 for an unknown record", async () => {
+      assert.equal((await call("GET", "/api/organizations/abc/history")).status, 400);
+      assert.equal((await call("GET", "/api/organizations/99999/history")).status, 404);
+      assert.equal((await call("GET", "/api/people/abc/history")).status, 400);
+      assert.equal((await call("GET", "/api/people/99999/history")).status, 404);
     });
   });
 

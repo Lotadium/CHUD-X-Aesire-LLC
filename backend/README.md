@@ -38,6 +38,7 @@ All the tests run with one command, `npm test`. The unit tests need nothing else
 |------|---------------|-------|
 | `test/rank.test.ts` | Website ranking (CHUD-48): official site chosen, directory/news/social sites ranked low, low-confidence results flagged, using sample results for a fire district, water district, city, county agency and special district (`test/fixtures/search-results.ts`) | nothing |
 | `test/search.test.ts` | Web search (CHUD-29) with the Brave API mocked: query building, the `/api/web-search` route, and that the ranking result is a valid discovery request for CHUD-30 | nothing |
+| `test/history.test.ts` | Version history (CHUD-36): what each saved version changed, ignoring the audit columns | nothing |
 | `test/api.test.ts` | The whole API, including saving discovery results (CHUD-30): high confidence saves, low confidence goes to review, an existing URL is not overwritten without confirmation | `TEST_DATABASE_URL` |
 
 **The tests never call the real Brave API or use search credit.** `npm test` loads `test/setup.ts` first, which
@@ -122,6 +123,7 @@ curl -X PUT http://localhost:8787/api/organizations/1 -H "Content-Type: applicat
 | GET | `/api/organizations` | Optional `?domain_id=` and `?website_status=` (NOT_SEARCHED, FOUND, NEEDS_REVIEW, NOT_FOUND). Each row includes `domain_name`, the website fields and `website_candidates` |
 | POST | `/api/organizations` | `{ domain_id, name, website_url? }` |
 | GET | `/api/organizations/:id` | Includes `contacts`: the people who work there |
+| GET | `/api/organizations/:id/history` | Saved versions, newest first (see [Version history](#version-history-chud-36)) |
 | PUT/PATCH | `/api/organizations/:id` | Any of `domain_id`, `name`, `website_url`, `is_flagged`, `flag_reason`. Changing `website_url` follows the website rules below |
 | PUT | `/api/organizations/:id/website` | Set the website by hand: `{ url, confirm_overwrite? }` |
 | POST | `/api/organizations/:id/website/discovery` | Save a website-discovery result (see below) |
@@ -134,6 +136,7 @@ curl -X PUT http://localhost:8787/api/organizations/1 -H "Content-Type: applicat
 | GET | `/api/people` | Optional `?organization_id=`. Each person includes `positions` and `emails` |
 | POST | `/api/people` | Person fields, plus optional `positions: [...]` and `emails: [...]`, saved all-or-nothing |
 | GET | `/api/people/:id` | |
+| GET | `/api/people/:id/history` | Saved versions of the person and their positions and emails, newest first |
 | PUT/PATCH | `/api/people/:id` | Person fields, `is_flagged`, `flag_reason` |
 | POST | `/api/people/:id/positions` | `{ organization_id, department_id?, title?, additional_title?, phone?, phone_ext?, mobile_phone?, fax? }` |
 | PUT/PATCH | `/api/positions/:id` | Position fields, `is_flagged`, `flag_reason` |
@@ -142,6 +145,22 @@ curl -X PUT http://localhost:8787/api/organizations/1 -H "Content-Type: applicat
 
 Person fields: `prefix`, `first_name` (required), `middle_name`, `last_name` (required), `suffix`,
 `linkedin_url`.
+
+## Version history (CHUD-36)
+
+Every response includes `date_created`, `date_last_updated`, `last_verified_at` and `version`. All changes go through
+`updateRow` in `src/db.ts`, for people and for the refresh alike, and the database does the versioning
+(`DataBase/database_add_record_versions.sql`):
+
+- A save that changes a value creates a new version: `version` goes up, `date_last_updated` is set, and the row is
+  copied into `record_history` with the time, who made it and `USER` or `REFRESH`.
+- A save that changes nothing creates no version and no history row. It only sets `last_verified_at`.
+- `verifyRow` in `src/db.ts` confirms a record without changing it (for the refresh, CHUD-35).
+
+The history endpoints return `{ "data": [...] }`, newest first. Each entry has `record` (`organization`, `person`,
+`position` or `email`), `row_id`, `version`, `operation` (`INSERT`, `UPDATE`), `changed_at`, `changed_by_type`,
+`changed_by`, `changes` (`[{ field, from, to }]` compared with the previous version) and `data` (the whole record
+after that change).
 
 ## Website discovery (CHUD-30)
 
@@ -204,12 +223,14 @@ backend/
   functions/api.ts     entry point: creates the connection pool and the app
   src/app.ts           routes, CORS, error handling
   src/routes/          lookups, organizations, people
-  src/db.ts            transactions (records who made a change) and insert/update helpers
+  src/db.ts            transactions (records who made a change) and insert/update/verify helpers
+  src/history.ts       reads saved versions and works out what each one changed (CHUD-36)
   src/validate.ts      input checks
   src/errors.ts        turns database errors into clean 400/404/409 responses
   src/ranking/rank.ts  scores web search results and picks the official website (CHUD-48)
   test/api.test.ts     integration tests
   test/rank.test.ts    unit tests for the ranking rules
+  test/history.test.ts unit tests for comparing versions
   test/search.test.ts  web search tests with the Brave API mocked
   test/setup.ts        fake Brave settings, loaded before every test file
   test/fixtures/       sample search results for each entity type
@@ -218,7 +239,7 @@ backend/
 ## AI use
 
 - **AI used:** Yes.
-- **Tool and model:** Claude Code (Sonnet 5.5; Opus 5.5 for CHUD-48 and CHUD-32).
+- **Tool and model:** Claude Code (Sonnet 5.5; Opus 5.5 for CHUD-48, CHUD-32 and CHUD-36).
 - **How it was made:** written with AI help from Claude Code, directed by Irene Riva. Working from Irene's requests,
   Ryan's schema (`DataBase/database_schema.sql`) and Neon's documentation, Claude Code wrote the code in `backend/`
   (routes, validation, error handling, database helpers), the integration tests and this README. That includes the
@@ -233,6 +254,10 @@ backend/
 
   For CHUD-32, directed by Ryan Griffiths: Claude Code wrote the test setup, sample search results and the search and
   ranking tests (`test/`) and the "Test it" docs. Ryan reviewed them and ran `npm test`.
+
+  For CHUD-36, directed by Ryan Griffiths: Claude Code wrote the versioning add-on SQL, the `updateRow`/`verifyRow`
+  changes, the history endpoints (`src/history.ts`), the dates on the entity form, the tests and these docs.
+  Ryan set the requirements and reviewed each step.
 - **Peer review:** pending, in the pull request.
 
 Every source file starts with a short AI-use note that points here.
