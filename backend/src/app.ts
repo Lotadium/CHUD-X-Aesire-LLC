@@ -5,6 +5,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { Pool } from "pg";
 import type { Actor } from "./db.ts";
 import { toHttpError } from "./errors.ts";
+import { activityRoutes } from "./routes/activity.ts";
 import { lookupRoutes } from "./routes/lookups.ts";
 import { organizationRoutes } from "./routes/organizations.ts";
 import { peopleRoutes } from "./routes/people.ts";
@@ -49,6 +50,7 @@ export function createApp(pool: Pool) {
   app.route("/api", peopleRoutes(pool));
   app.route("/api", searchUsageRoutes(pool));
   app.route("/api", webSearchRoutes(pool));
+  app.route("/api", activityRoutes(pool)); // CHUD-38
 
   app.notFound((c) => c.json({ error: "Not found" }, 404));
 

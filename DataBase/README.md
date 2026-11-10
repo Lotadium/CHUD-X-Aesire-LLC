@@ -14,6 +14,7 @@ The original flat contact record (organization, name, title, phones, email, doma
 |---|---|
 | `database_schema.sql` | Creates all tables, indexes, and the versioning/history triggers. Run once on a fresh database. |
 | `database_add_flag_columns.sql` | Migration that adds `is_flagged` and `flag_reason` to the record tables. Run after `database_schema.sql`. Safe to rerun. |
+| `database_add_activity_log.sql` | Adds the `activity_log` table (CHUD-38): one row per create, edit, flag or refresh of a record, for the activity log page. Run after `database_add_search_usage.sql`. Safe to rerun. |
 | `CTI - ERD.pdf` | Original ERD (V1) of `database_schema.sql`, created in [dbdiagram.io](https://dbdiagram.io). |
 | `CTI - ERD flag additionV2.pdf` | Updated ERD (V2) including the `is_flagged` / `flag_reason` columns from `database_add_flag_columns.sql`. |
 

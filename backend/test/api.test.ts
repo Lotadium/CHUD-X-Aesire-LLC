@@ -46,6 +46,7 @@ describe("CHUD API", { skip }, () => {
       "database_add_flag_columns.sql", // is_flagged / flag_reason (CHUD-10)
       "database_add_website_discovery.sql", // website_status / website_source / candidates (CHUD-30)
       "database_add_search_usage.sql", // web_search_log (CHUD-49)
+      "database_add_activity_log.sql", // activity_log (CHUD-38)
     ]) {
       await pool.query(readFileSync(new URL(`../../DataBase/${file}`, import.meta.url), "utf8"));
     }
@@ -882,6 +883,109 @@ describe("CHUD API", { skip }, () => {
       assert.equal(monthlyLimit("12.5"), null);
       assert.equal(monthlyLimit("-1"), null);
       assert.equal(monthlyLimit("1000"), 1000);
+    });
+  });
+
+  // AI use: written with help from Claude (Anthropic), directed by Rachel Wong.
+  describe("activity log (CHUD-38)", () => {
+    let orgId: number;
+
+    // Entries for one entity, newest first
+    async function activityFor(id: number, query = "") {
+      const res = await call("GET", `/api/activity?organization_id=${id}${query}`);
+      assert.equal(res.status, 200);
+      return res.body;
+    }
+
+    before(async () => {
+      const res = await call("POST", "/api/organizations", { domain_id: domainId, name: "Activity Test Agency" }, "rachel");
+      orgId = res.body.organization_id;
+    });
+
+    it("shows nothing for an entity with no activity", async () => {
+      const body = await activityFor(2147483000);
+      assert.deepEqual(body.data, []);
+      assert.equal(body.total, 0);
+    });
+
+    it("logs creating an entity, with who did it and when", async () => {
+      const [entry] = (await activityFor(orgId)).data;
+      assert.equal(entry.action, "CREATED");
+      assert.equal(entry.record_type, "organization");
+      assert.equal(entry.record_id, orgId);
+      assert.equal(entry.organization_name, "Activity Test Agency");
+      assert.equal(entry.actor_type, "USER");
+      assert.equal(entry.actor_name, "rachel");
+      assert.ok(entry.occurred_at);
+    });
+
+    it("logs a manual update with the fields that changed, newest first", async () => {
+      await call("PATCH", `/api/organizations/${orgId}`, { name: "Activity Test Agency 2" });
+      const { data } = await activityFor(orgId);
+      assert.deepEqual(data.map((e: { action: string }) => e.action), ["MANUAL_UPDATE", "CREATED"]);
+      assert.equal(data[0].detail, "Changed: name");
+    });
+
+    it("logs flagging as its own action, and removing a flag as a manual update", async () => {
+      await call("PATCH", `/api/organizations/${orgId}`, { is_flagged: true, flag_reason: "Agency closed" });
+      await call("PATCH", `/api/organizations/${orgId}`, { is_flagged: false });
+      const { data } = await activityFor(orgId);
+      assert.equal(data[1].action, "FLAGGED");
+      assert.equal(data[1].detail, "Reason: Agency closed");
+      assert.equal(data[0].action, "MANUAL_UPDATE");
+      assert.equal(data[0].detail, "Flag removed");
+    });
+
+    it("logs contact changes and lists them under the contact's entity", async () => {
+      const person = await call("POST", "/api/people", {
+        first_name: "Ann", last_name: "Activity",
+        positions: [{ organization_id: orgId, title: "Clerk" }],
+        emails: [{ address: "ann.activity@example.gov" }],
+      });
+      const personId = person.body.person_id;
+      await call("PATCH", `/api/people/${personId}`, { first_name: "Anne" });
+      await call("PATCH", `/api/emails/${person.body.emails[0].email_id}`, { is_flagged: true, flag_reason: "Bounced" });
+      await call("PATCH", `/api/positions/${person.body.positions[0].position_id}`, { title: "Senior Clerk" });
+
+      const { data } = await activityFor(orgId);
+      const mine = data.filter((e: { person_id: number }) => e.person_id === personId);
+      assert.deepEqual(
+        mine.map((e: { action: string; record_type: string }) => `${e.action} ${e.record_type}`),
+        ["MANUAL_UPDATE position", "FLAGGED email", "MANUAL_UPDATE person", "CREATED person"],
+      );
+      assert.equal(mine[0].person_name, "Anne Activity");
+    });
+
+    it("logs website discovery as the refresh", async () => {
+      await call("POST", `/api/organizations/${orgId}/website/discovery`, { confidence: "none" });
+      await call("POST", `/api/organizations/${orgId}/website/discovery`, { confidence: "high", url: "https://activity.example.gov/" });
+      const { data } = await activityFor(orgId);
+      assert.equal(data[0].action, "REFRESH_SUCCESS");
+      assert.equal(data[0].actor_type, "REFRESH");
+      assert.match(data[0].detail, /activity\.example\.gov/);
+      assert.equal(data[1].action, "REFRESH_ATTEMPT");
+    });
+
+    it("logs nothing when a change fails", async () => {
+      const before = (await activityFor(orgId)).total;
+      // Already has a website, so this is refused without confirm_overwrite
+      const refused = await call("PUT", `/api/organizations/${orgId}/website`, { url: "https://other.example.gov/" });
+      assert.equal(refused.status, 409);
+      assert.equal((await call("PATCH", "/api/organizations/2147483000", { name: "Nobody" })).status, 404);
+      assert.equal((await activityFor(orgId)).total, before);
+    });
+
+    it("filters by action type", async () => {
+      const { data } = await activityFor(orgId, "&action=FLAGGED");
+      assert.equal(data.length, 2); // the entity and the email
+      assert.ok(data.every((e: { action: string }) => e.action === "FLAGGED"));
+      const all = await call("GET", "/api/activity?action=CREATED");
+      assert.ok(all.body.data.every((e: { action: string }) => e.action === "CREATED"));
+    });
+
+    it("rejects an unknown action or entity id", async () => {
+      assert.equal((await call("GET", "/api/activity?action=DELETED")).status, 400);
+      assert.equal((await call("GET", "/api/activity?organization_id=abc")).status, 400);
     });
   });
 });

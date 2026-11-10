@@ -1,12 +1,13 @@
 // AI use: written with AI help from Claude Code (Sonnet 5.5), directed by Irene Riva. See "AI use" in backend/README.md.
 import { Hono, type Context } from "hono";
 import type { Pool } from "pg";
+import { describeUpdate, logActivity } from "../activity.ts";
 import type { AppEnv } from "../app.ts";
 import { insertRow, one, updateRow, withTransaction, type Queryable } from "../db.ts";
 import { HttpError } from "../errors.ts";
 import { notFound, readJson } from "../http.ts";
 import { parseFields, parseId, parsePage, parseUpdate, type Parsed, type Schema } from "../validate.ts";
-import { applyWebsiteChange, parseDiscovery, rejectCandidates, saveDiscoveryResult } from "../website.ts";
+import { applyWebsiteChange, parseDiscovery, rejectCandidates, saveDiscoveryResult, type DiscoveryResult } from "../website.ts";
 
 const ORGANIZATION_FIELDS: Schema = {
   domain_id: { type: "int", required: true },
@@ -36,6 +37,14 @@ const ORGANIZATION_SELECT = `
       WHERE c.organization_id = o.organization_id), '[]'::jsonb) AS website_candidates
   FROM organization o
   JOIN domain d ON d.domain_id = o.domain_id`;
+
+// How each discovery result reads in the activity log (CHUD-38)
+const DISCOVERY_DETAIL: Record<DiscoveryResult, string> = {
+  saved: "Website search: URL saved",
+  unchanged: "Website search: found the saved URL again",
+  needs_review: "Website search: needs review",
+  no_match: "Website search: no match",
+};
 
 const WEBSITE_STATUSES = ["NOT_SEARCHED", "FOUND", "NEEDS_REVIEW", "NOT_FOUND"];
 
@@ -94,6 +103,10 @@ export function organizationRoutes(pool: Pool) {
     const fields = parseFields(await readJson(c), ORGANIZATION_FIELDS, "create");
     const organization = await withTransaction(pool, actor, async (db) => {
       const row = await insertRow<{ organization_id: number }>(db, "organization", fields, actor);
+      await logActivity(db, {
+        action: "CREATED", recordType: "organization", recordId: row.organization_id,
+        organizationId: row.organization_id, actor, detail: `Entity created: ${fields.name}`,
+      });
       return getOrganization(db, row.organization_id);
     });
     return c.json(organization, 201);
@@ -112,6 +125,7 @@ export function organizationRoutes(pool: Pool) {
       if (Object.keys(fields).length > 0) {
         const row = await updateRow(db, "organization", "organization_id", id, fields, actor);
         if (!row) return undefined;
+        await logActivity(db, { ...describeUpdate(fields), recordType: "organization", recordId: id, organizationId: id, actor });
       }
       return getOrganization(db, id);
     });
@@ -132,6 +146,10 @@ export function organizationRoutes(pool: Pool) {
       await applyWebsiteChange(db, id, fields, body.confirm_overwrite === true, true); // true: keeping the same URL settles a review
       if (Object.keys(fields).length > 0) {
         await updateRow(db, "organization", "organization_id", id, fields, actor);
+        await logActivity(db, {
+          action: "MANUAL_UPDATE", recordType: "organization", recordId: id, organizationId: id, actor,
+          detail: `Website set to ${fields.website_url ?? "(none)"}`,
+        });
       }
       return getOrganization(db, id);
     });
@@ -144,6 +162,10 @@ export function organizationRoutes(pool: Pool) {
     const id = parseId(c.req.param("id"));
     const organization = await withTransaction(pool, actor, async (db) => {
       await rejectCandidates(db, actor, id);
+      await logActivity(db, {
+        action: "MANUAL_UPDATE", recordType: "organization", recordId: id, organizationId: id, actor,
+        detail: "Rejected the suggested websites",
+      });
       return getOrganization(db, id);
     });
     return c.json(organization);
@@ -157,7 +179,16 @@ export function organizationRoutes(pool: Pool) {
     const input = parseDiscovery(await readJson(c));
     const body = await withTransaction(pool, actor, async (db) => {
       const result = await saveDiscoveryResult(db, actor, id, input);
-      return { result, organization: await getOrganization(db, id) };
+      const organization = await getOrganization(db, id);
+      // Website discovery is automatic, so it is logged as the refresh (like its record_history rows).
+      await logActivity(db, {
+        action: result === "saved" || result === "unchanged" ? "REFRESH_SUCCESS" : "REFRESH_ATTEMPT",
+        recordType: "organization", recordId: id, organizationId: id, actor, actorType: "REFRESH",
+        detail: result === "saved" || result === "unchanged"
+          ? `${DISCOVERY_DETAIL[result]}: ${organization?.website_url}`
+          : DISCOVERY_DETAIL[result],
+      });
+      return { result, organization };
     });
     return c.json(body);
   });

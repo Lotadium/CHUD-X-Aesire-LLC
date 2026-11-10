@@ -1,6 +1,7 @@
 // AI use: written by Claude (Claude Code, Sonnet 5.5) at Irene Riva's direction. See "AI use" in backend/README.md.
 import { Hono, type Context } from "hono";
 import type { Pool } from "pg";
+import { describeUpdate, logActivity } from "../activity.ts";
 import type { AppEnv } from "../app.ts";
 import { insertRow, one, updateRow, withTransaction, type Queryable } from "../db.ts";
 import type { FieldErrors } from "../errors.ts";
@@ -151,6 +152,12 @@ export function peopleRoutes(pool: Pool) {
       for (const email of emails) {
         await insertRow(db, "email", { ...withEmailParts(email), person_id: created.person_id }, actor);
       }
+      // One entry for the new contact. It is listed under the entity of its first position, if any.
+      await logActivity(db, {
+        action: "CREATED", recordType: "person", recordId: created.person_id, personId: created.person_id,
+        organizationId: typeof positions[0]?.organization_id === "number" ? positions[0].organization_id : null,
+        actor, detail: `Contact created: ${personFields.first_name} ${personFields.last_name}`,
+      });
       return getPerson(db, created.person_id);
     });
     return c.json(person, 201);
@@ -162,7 +169,9 @@ export function peopleRoutes(pool: Pool) {
     const fields = parseUpdate(await readJson(c), PERSON_FIELDS);
     const person = await withTransaction(pool, actor, async (db) => {
       const row = await updateRow(db, "person", "person_id", id, fields, actor);
-      return row ? getPerson(db, id) : undefined;
+      if (!row) return undefined;
+      await logActivity(db, { ...describeUpdate(fields), recordType: "person", recordId: id, personId: id, actor });
+      return getPerson(db, id);
     });
     if (!person) throw notFound("Person");
     return c.json(person);
@@ -184,6 +193,10 @@ export function peopleRoutes(pool: Pool) {
         { ...fields, person_id: personId },
         actor,
       );
+      await logActivity(db, {
+        action: "CREATED", recordType: "position", recordId: row.position_id, personId,
+        organizationId: fields.organization_id as number, actor, detail: "Position added",
+      });
       return one(db, `${POSITION_SELECT} WHERE pos.position_id = $1`, [row.position_id]);
     });
     return c.json(position, 201);
@@ -194,8 +207,15 @@ export function peopleRoutes(pool: Pool) {
     const id = parseId(c.req.param("id"));
     const fields = parseUpdate(await readJson(c), POSITION_FIELDS);
     const position = await withTransaction(pool, actor, async (db) => {
-      const row = await updateRow(db, "position", "position_id", id, fields, actor);
-      return row ? one(db, `${POSITION_SELECT} WHERE pos.position_id = $1`, [id]) : undefined;
+      const row = await updateRow<{ person_id: number; organization_id: number }>(
+        db, "position", "position_id", id, fields, actor,
+      );
+      if (!row) return undefined;
+      await logActivity(db, {
+        ...describeUpdate(fields), recordType: "position", recordId: id,
+        personId: row.person_id, organizationId: row.organization_id, actor,
+      });
+      return one(db, `${POSITION_SELECT} WHERE pos.position_id = $1`, [id]);
     });
     if (!position) throw notFound("Position");
     return c.json(position);
@@ -211,7 +231,12 @@ export function peopleRoutes(pool: Pool) {
     const fields = withEmailParts(parseFields(await readJson(c), EMAIL_FIELDS, "create"));
     const email = await withTransaction(pool, actor, async (db) => {
       await requirePerson(db, personId);
-      return insertRow(db, "email", { ...fields, person_id: personId }, actor);
+      const row = await insertRow<{ email_id: number }>(db, "email", { ...fields, person_id: personId }, actor);
+      await logActivity(db, {
+        action: "CREATED", recordType: "email", recordId: row.email_id, personId, actor,
+        detail: `Email added: ${fields.address}`,
+      });
+      return row;
     });
     return c.json(email, 201);
   });
@@ -220,9 +245,13 @@ export function peopleRoutes(pool: Pool) {
     const actor = c.get("actor");
     const id = parseId(c.req.param("id"));
     const fields = withEmailParts(parseUpdate(await readJson(c), EMAIL_FIELDS));
-    const email = await withTransaction(pool, actor, (db) =>
-      updateRow(db, "email", "email_id", id, fields, actor),
-    );
+    const email = await withTransaction(pool, actor, async (db) => {
+      const row = await updateRow<{ person_id: number }>(db, "email", "email_id", id, fields, actor);
+      if (row) {
+        await logActivity(db, { ...describeUpdate(fields), recordType: "email", recordId: id, personId: row.person_id, actor });
+      }
+      return row;
+    });
     if (!email) throw notFound("Email");
     return c.json(email);
   };
