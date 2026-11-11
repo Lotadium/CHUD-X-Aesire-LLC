@@ -47,7 +47,12 @@ export function defaultRefreshDeps(options: ProviderOptions = {}): RefreshDeps {
       }
       const value = (text: string) => (text === NOT_FOUND ? null : text);
       const { title, email, phone, sourceUrl } = result.contact;
-      return { found: true, details: { title: value(title), email: value(email), phone: value(phone) }, sourceUrl };
+      return {
+        found: true,
+        details: { title: value(title), email: value(email), phone: value(phone) },
+        sourceUrl,
+        matchedBy: result.matchedBy,
+      };
     },
   };
 }

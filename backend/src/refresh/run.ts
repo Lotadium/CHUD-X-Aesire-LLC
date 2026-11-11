@@ -263,6 +263,7 @@ async function safeLookup(deps: RefreshDeps, websiteUrl: string, contact: Stored
       middleName: contact.middle_name ?? undefined,
       lastName: contact.last_name,
       nameSuffix: contact.suffix ?? undefined,
+      emails: contact.emails.map((e) => e.address), // tried first, then the name
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

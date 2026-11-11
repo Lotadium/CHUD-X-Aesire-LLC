@@ -100,6 +100,18 @@ describe("refresh: contact lookup (CHUD-34 crawler)", () => {
     server = createServer((req, res) => {
       if (req.url === "/robots.txt") return void res.writeHead(200).end("User-agent: *\nAllow: /");
       if (req.url === "/staff.html") return void res.writeHead(200, { "Content-Type": "text/html" }).end(html);
+      if (req.url === "/plain") {
+        return void res.writeHead(200, { "Content-Type": "text/html" }).end(
+          "<html><body><ul><li>Elizabeth Smith, City Clerk, elizabeth.smith@city.gov</li>" +
+          "<li>Robert Jones, Mayor, bob.jones@city.gov</li></ul></body></html>",
+        );
+      }
+      if (req.url === "/cards") {
+        return void res.writeHead(200, { "Content-Type": "text/html" }).end(
+          '<html><body><div class="staff"><div class="staff-member"><b>Dr. Robert Jones</b> <span class="title">Mayor</span> <a href="mailto:bob.jones@city.gov">email</a></div>' +
+          '<div class="staff-member"><b>E. Smith</b> <span class="title">City Clerk</span> <a href="mailto:elizabeth.smith@city.gov">email</a></div></div></body></html>',
+        );
+      }
       if (req.url === "/empty") return void res.writeHead(200, { "Content-Type": "text/html" }).end("<html><body><p>Nobody here</p></body></html>");
       res.writeHead(404).end();
     });
@@ -114,7 +126,44 @@ describe("refresh: contact lookup (CHUD-34 crawler)", () => {
       found: true,
       details: { title: "Director of Operations", email: "jane.doe@example.org", phone: "+1-555-0100" },
       sourceUrl: `${base}/staff.html`,
+      matchedBy: "name",
     });
+  });
+
+  it("finds a contact by email when the website writes the name differently", async () => {
+    // We know her as "Janet Roe"; the website lists "Jane Doe" with the same address.
+    const result = await lookup(`${base}/staff.html`, { firstName: "Janet", lastName: "Roe", emails: ["Jane.Doe@example.org"] });
+    assert.equal(result.found, true);
+    assert.equal(result.found && result.matchedBy, "email");
+    assert.equal(result.found && result.details.title, "Director of Operations");
+    assert.equal(result.found && result.details.email, "jane.doe@example.org");
+  });
+
+  it("finds the right person by an address written in the page text, even for a nickname", async () => {
+    const result = await lookup(`${base}/plain`, { firstName: "Liz", lastName: "Smith", emails: ["elizabeth.smith@city.gov"] });
+    assert.equal(result.found, true);
+    assert.equal(result.found && result.matchedBy, "email");
+    assert.equal(result.found && result.details.email, "elizabeth.smith@city.gov", "not the mayor's address");
+  });
+
+  it("picks the matching person's own title when several people are listed together", async () => {
+    const result = await lookup(`${base}/cards`, { firstName: "Liz", lastName: "Smith", emails: ["elizabeth.smith@city.gov"] });
+    assert.equal(result.found, true);
+    assert.equal(result.found && result.details.title, "City Clerk", "not the mayor's title");
+    assert.equal(result.found && result.details.email, "elizabeth.smith@city.gov");
+  });
+
+  it("falls back to the name when none of the known emails is on the website", async () => {
+    const result = await lookup(`${base}/staff.html`, { firstName: "Jane", lastName: "Doe", emails: ["old.address@example.org"] });
+    assert.equal(result.found, true);
+    assert.equal(result.found && result.matchedBy, "name");
+    assert.equal(result.found && result.details.email, "jane.doe@example.org");
+  });
+
+  it("does not match a different person by name or email", async () => {
+    const result = await lookup(`${base}/staff.html`, { firstName: "Zed", lastName: "Nobody", emails: ["zed@example.org"] });
+    assert.equal(result.found, false);
+    assert.equal(result.found === false && result.code, "CONTACT_NOT_LISTED");
   });
 
   it("reports a contact who is not on the pages as CONTACT_NOT_LISTED", async () => {
@@ -151,6 +200,7 @@ describe("refresh: API", { skip }, () => {
   let lookups: Record<string, LookupResult | Error>; // key: "Jane Doe"
   let searched: string[];
   let looked: string[];
+  let lookedFor: Record<string, string[] | undefined>; // the emails each lookup was given, by name
   let lookupDelayMs = 0; // makes the fake lookup slow, to test the time budget
   const deps: RefreshDeps = {
     searchProvider: "fake",
@@ -163,6 +213,7 @@ describe("refresh: API", { skip }, () => {
     async lookupContact(websiteUrl, name) {
       const key = `${name.firstName} ${name.lastName}`;
       looked.push(`${key} @ ${websiteUrl}`);
+      lookedFor[key] = name.emails;
       if (lookupDelayMs) await new Promise((resolve) => setTimeout(resolve, lookupDelayMs));
       const answer = lookups[key] ?? { found: false as const, code: "CONTACT_NOT_LISTED" as const, reason: "not on the site" };
       if (answer instanceof Error) throw answer;
@@ -233,6 +284,7 @@ describe("refresh: API", { skip }, () => {
     lookups = {};
     searched = [];
     looked = [];
+    lookedFor = {};
     lookupDelayMs = 0;
     n += 1;
     domainId = (await call("POST", "/api/domains", { name: `Domain ${n}` })).body.domain_id;
@@ -389,6 +441,33 @@ describe("refresh: API", { skip }, () => {
       assert.equal((await pool.query("SELECT address FROM email WHERE person_id = $1", [jane])).rows[0].address, "jane@zeta.gov");
       // the rest of what the page said is still saved
       assert.equal((await pool.query("SELECT title FROM position WHERE person_id = $1", [jane])).rows[0].title, "Aide");
+    });
+
+    it("gives the lookup each contact's stored emails, so it can match by email before the name", async () => {
+      const org = await makeOrg("City of Emails");
+      await makePerson(org, "Liz", "Smith", { emails: ["elizabeth.smith@emails.gov", "liz@emails.gov"] });
+      await makePerson(org, "Bob", "Jones");
+      const flagged = await makePerson(org, "Amy", "Lee", { emails: ["amy@emails.gov", "amy.old@emails.gov"] });
+      await pool.query("UPDATE email SET is_flagged = true, flag_reason = 'bounced' WHERE address = 'amy.old@emails.gov'");
+      lookups["Liz Smith"] = found({ title: "City Clerk" });
+      lookups["Bob Jones"] = found({ title: "Mayor" });
+      lookups["Amy Lee"] = found({ title: "Aide" });
+      await runAll({ organization_ids: [org] });
+      assert.deepEqual([...(lookedFor["Liz Smith"] ?? [])].sort(), ["elizabeth.smith@emails.gov", "liz@emails.gov"]);
+      assert.deepEqual(lookedFor["Bob Jones"], [], "no email on file: the name is all there is");
+      assert.deepEqual(lookedFor["Amy Lee"], ["amy@emails.gov"], "a flagged address is not used");
+      assert.ok(flagged > 0);
+    });
+
+    it("updates the stored contact when the lookup recognized them by email", async () => {
+      const org = await makeOrg("City of Nicknames");
+      const person = await makePerson(org, "Liz", "Smith", { title: "Clerk", emails: ["elizabeth.smith@nick.gov"] });
+      lookups["Liz Smith"] = { found: true, details: { title: "City Clerk", email: "elizabeth.smith@nick.gov", phone: null }, sourceUrl: "https://nick.gov/staff", matchedBy: "email" };
+      const before = { person: await count("person"), position: await count("position"), email: await count("email") };
+      const summary = await runAll({ organization_ids: [org] });
+      assert.equal(summary.verified, 1);
+      assert.equal((await pool.query("SELECT title FROM position WHERE person_id = $1", [person])).rows[0].title, "City Clerk");
+      assert.deepEqual({ person: await count("person"), position: await count("position"), email: await count("email") }, before, "same rows, no duplicates");
     });
 
     it("skips contacts that are flagged as no longer valid", async () => {

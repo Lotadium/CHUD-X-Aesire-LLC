@@ -13,13 +13,20 @@ export type RefreshDeps = {
 
 export type OrganizationInfo = { organization_id: number; name: string; domain_name: string };
 
-export type ContactName = { firstName: string; middleName?: string; lastName: string; nameSuffix?: string };
+/** Who to look for. The emails we already have are tried first, then the name (CHUD-35: match by email, then by name). */
+export type ContactName = {
+  firstName: string;
+  middleName?: string;
+  lastName: string;
+  nameSuffix?: string;
+  emails?: string[];
+};
 
 /** What the website says about one contact. A field the page did not show is null. */
 export type ContactDetails = { title: string | null; email: string | null; phone: string | null };
 
 export type LookupResult =
-  | { found: true; details: ContactDetails; sourceUrl: string }
+  | { found: true; details: ContactDetails; sourceUrl: string; matchedBy?: "email" | "name" }
   | { found: false; code: LookupFailureCode; reason: string };
 
 export type LookupFailureCode = "SITE_UNREACHABLE" | "CONTACT_NOT_LISTED" | "LOOKUP_UNAVAILABLE";

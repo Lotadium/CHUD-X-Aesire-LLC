@@ -232,7 +232,10 @@ details it did find were saved.
    a confident match is saved as an automatic change; a low-confidence one goes to the review list and the record is
    unverified (`WEBSITE_NEEDS_REVIEW`). Each search is counted toward the monthly usage (CHUD-49), and no search is made
    once `WEB_SEARCH_MONTHLY_LIMIT` is reached (`SEARCH_LIMIT_REACHED`).
-2. Look up each contact we already have there (people with a position at this record, not flagged) on the website (CHUD-34).
+2. Look up each contact we already have there (people with a position at this record, not flagged) on the website
+   (CHUD-34). **Email first, then name:** the contact's stored email addresses (flagged ones excluded) are looked for on
+   the page first, as a `mailto:` link or as text, so a name written differently on the website (a nickname, a middle
+   name) still finds the right person; only if none is there is the name used.
 3. Compare and write **only what changed**, in one transaction:
    - Title and phone go on the person's position. A phone number in another format ("(916) 555-0100" vs
      "+1-916-555-0100") is not a change. A value the website does not show is never blanked. A phone is saved only if
@@ -303,7 +306,8 @@ backend/
   30, 48 and 49 code, Claude Code wrote the refresh (`src/refresh/`, `src/routes/refresh.ts`,
   `DataBase/database_add_refresh.sql`), its tests (`test/refresh.test.ts`) and the section above. Irene directed the
   work and decided its scope (existing contacts only); the matching rules for emails are a design choice that still
-  needs a teammate's review.
+  needs a teammate's review. Claude Code also added the "known email first, then name" matching to Kyle's crawler
+  (`src/scrape/scraper.ts`) after a review comment.
 - **Peer review:** pending, in the pull request.
 
 Every source file starts with a short AI-use note that points here.
