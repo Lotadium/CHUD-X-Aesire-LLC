@@ -142,7 +142,7 @@ Every table except `department` and `record_history` has these columns:
 |---|---|
 | `date_created` | When the row was first stored |
 | `date_last_updated` | When it last changed (set automatically) |
-| `last_verified_at` | When the record was last confirmed correct (set on create, and on every save or refresh check) |
+| `last_verified_at` | When the record was last confirmed correct (set on create, on every manual save, and when the refresh confirms the record) |
 | `updated_by_type` | `USER` or `REFRESH` (automatic web refresh) |
 | `updated_by` | Username, or the refresh job's name |
 | `version` | Starts at 1 and goes up by 1 on every update that changes a value (set automatically) |
@@ -154,7 +154,7 @@ Two trigger functions handle this automatically:
 
 `database_add_record_versions.sql` (CHUD-36) refines both: an update that changes nothing, or only
 `last_verified_at`, keeps the same version, last updated date and `updated_by`, and writes no history row.
-So a save with no changes, or a refresh that confirms a record is still correct, only moves `last_verified_at`.
+So a manual save with no changes, or a refresh that confirms a record is still correct, only moves `last_verified_at`.
 The saved versions are read back newest first by `GET /api/organizations/:id/history` and `GET /api/people/:id/history`.
 
 ### Flagging

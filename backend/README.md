@@ -155,7 +155,8 @@ Every response includes `date_created`, `date_last_updated`, `last_verified_at` 
 - A save that changes a value creates a new version: `version` goes up, `date_last_updated` is set, and the row is
   copied into `record_history` with the time, who made it and `USER` or `REFRESH`.
 - A save that changes nothing creates no version and no history row. It only sets `last_verified_at`.
-- `verifyRow` in `src/db.ts` confirms a record without changing it (for the refresh, CHUD-35).
+- Only manual saves (`USER`) set `last_verified_at`. A `REFRESH` save does not; the refresh (CHUD-35) marks a record
+  verified with `verifyRow` in `src/db.ts`, which changes nothing else.
 
 The history endpoints return `{ "data": [...] }`, newest first. Each entry has `record` (`organization`, `person`,
 `position` or `email`), `row_id`, `version`, `operation` (`INSERT`, `UPDATE`), `changed_at`, `changed_by_type`,

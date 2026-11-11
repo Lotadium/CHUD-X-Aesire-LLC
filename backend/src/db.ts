@@ -71,7 +71,8 @@ export async function insertRow<T extends QueryResultRow>(
  * The database triggers (DataBase/database_add_record_versions.sql) do the versioning:
  * - a real change bumps `version` and `date_last_updated` and copies the new row into record_history;
  * - sending the values the record already has creates no version and no history row.
- * Saving also confirms the record, so `last_verified_at` is set to now either way.
+ * A person's save (USER) also confirms the record, so `last_verified_at` is set to now either way.
+ * A REFRESH save does not: the refresh calls `verifyRow` when it has actually confirmed the record.
  */
 export async function updateRow<T extends QueryResultRow>(
   db: Queryable,
@@ -84,9 +85,10 @@ export async function updateRow<T extends QueryResultRow>(
 ): Promise<T | undefined> {
   const entries = [...Object.entries(fields), ["updated_by_type", changedBy], ["updated_by", actor.name]] as const;
   const assignments = entries.map(([column], i) => `${column} = $${i + 1}`);
+  if (changedBy === "USER") assignments.push("last_verified_at = now()");
   const values = [...entries.map(([, value]) => value), id];
   const { rows } = await db.query<T>(
-    `UPDATE "${table}" SET ${assignments.join(", ")}, last_verified_at = now()
+    `UPDATE "${table}" SET ${assignments.join(", ")}
      WHERE ${idColumn} = $${values.length} RETURNING *`,
     values,
   );
@@ -94,8 +96,8 @@ export async function updateRow<T extends QueryResultRow>(
 }
 
 /**
- * Confirm a record is still correct without changing it (the refresh, CHUD-35, when nothing differs):
- * sets `last_verified_at` to now. This creates no version and no history row.
+ * Confirm a record is still correct without changing it: sets `last_verified_at` to now.
+ * This is how the refresh (CHUD-35) marks a record verified. It creates no version and no history row.
  * Returns the row, or undefined if it does not exist.
  */
 export async function verifyRow<T extends QueryResultRow>(

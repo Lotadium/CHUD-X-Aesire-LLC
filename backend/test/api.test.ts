@@ -884,11 +884,23 @@ describe("CHUD API", { skip }, () => {
       assert.equal(await verifyRow(pool, "organization", "organization_id", 99999), undefined);
     });
 
-    it("records a change made by the refresh as REFRESH", async () => {
+    it("records a change made by the refresh as REFRESH, without marking the record verified", async () => {
+      const before = (await call("GET", `/api/organizations/${id}`)).body;
       await call("POST", `/api/organizations/${id}/website/discovery`, { confidence: "high", url: "https://vfd.example" }, "refresh");
       const rows = await historyRows("organization", id);
       assert.equal(rows.at(-1).changed_by_type, "REFRESH");
       assert.equal(rows.at(-1).changed_by, "refresh");
+      const after = (await call("GET", `/api/organizations/${id}`)).body;
+      assert.equal(after.last_verified_at, before.last_verified_at, "only verifyRow marks a refresh as verified");
+    });
+
+    it("does not mark a record verified when a website search finds nothing", async () => {
+      const org = (await call("POST", "/api/organizations", { domain_id: domainId, name: "Unfound Water Agency" })).body;
+      const res = await call("POST", `/api/organizations/${org.organization_id}/website/discovery`, { confidence: "none" }, "refresh");
+      assert.ok(res.status < 300, `discovery saved (${res.status})`);
+      const after = (await call("GET", `/api/organizations/${org.organization_id}`)).body;
+      assert.equal(after.website_status, "NOT_FOUND");
+      assert.equal(after.last_verified_at, org.last_verified_at);
     });
 
     it("returns an entity's version history, newest first, with what each version changed", async () => {
