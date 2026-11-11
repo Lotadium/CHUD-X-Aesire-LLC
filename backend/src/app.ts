@@ -5,9 +5,12 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { Pool } from "pg";
 import type { Actor } from "./db.ts";
 import { toHttpError } from "./errors.ts";
+import { defaultRefreshDeps } from "./refresh/providers.ts";
+import type { RefreshDeps } from "./refresh/types.ts";
 import { lookupRoutes } from "./routes/lookups.ts";
 import { organizationRoutes } from "./routes/organizations.ts";
 import { peopleRoutes } from "./routes/people.ts";
+import { refreshRoutes } from "./routes/refresh.ts";
 import { searchUsageRoutes } from "./routes/searchUsage.ts";
 import { webSearchRoutes } from "./routes/web-search.ts";
 
@@ -15,9 +18,10 @@ export type AppEnv = { Variables: { actor: Actor } };
 
 /**
  * Build the API. The pool is passed in so tests can point it at a throwaway
- * database and the deployed function can use the Neon one.
+ * database and the deployed function can use the Neon one. The refresh's outside
+ * services (web search, contact lookup) are passed in the same way, so tests can fake them.
  */
-export function createApp(pool: Pool) {
+export function createApp(pool: Pool, refreshDeps: RefreshDeps = defaultRefreshDeps()) {
   const app = new Hono<AppEnv>();
 
   // The front end is served from a different origin (Cloudflare), so allow it.
@@ -47,6 +51,7 @@ export function createApp(pool: Pool) {
   app.route("/api", lookupRoutes(pool));
   app.route("/api", organizationRoutes(pool));
   app.route("/api", peopleRoutes(pool));
+  app.route("/api", refreshRoutes(pool, refreshDeps));
   app.route("/api", searchUsageRoutes(pool));
   app.route("/api", webSearchRoutes(pool));
 

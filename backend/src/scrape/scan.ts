@@ -5,6 +5,8 @@ export interface ContactName {
   middleName?: string;
   lastName: string;
   nameSuffix?: string;
+  /** Email addresses we already have for this person. When given, they are looked for before the name. */
+  emails?: string[];
 };
 
 export function tokenizeString(value: string): string[] {
