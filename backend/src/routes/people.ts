@@ -43,7 +43,7 @@ const EMAIL_FIELDS: Schema = {
 const MAX_NESTED = 50;
 
 /** The email table also stores the domain and TLD "entered with record". */
-function withEmailParts(fields: Parsed): Parsed {
+export function withEmailParts(fields: Parsed): Parsed {
   if (typeof fields.address !== "string") return fields;
   const domain = fields.address.slice(fields.address.lastIndexOf("@") + 1);
   const tld = domain.slice(domain.lastIndexOf(".") + 1);
