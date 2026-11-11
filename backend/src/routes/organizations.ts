@@ -4,6 +4,7 @@ import type { Pool } from "pg";
 import type { AppEnv } from "../app.ts";
 import { insertRow, one, updateRow, withTransaction, type Queryable } from "../db.ts";
 import { HttpError } from "../errors.ts";
+import { getHistory } from "../history.ts";
 import { notFound, readJson } from "../http.ts";
 import { parseFields, parseId, parsePage, parseUpdate, type Parsed, type Schema } from "../validate.ts";
 import { applyWebsiteChange, parseDiscovery, rejectCandidates, saveDiscoveryResult } from "../website.ts";
@@ -87,6 +88,15 @@ export function organizationRoutes(pool: Pool) {
       [id],
     );
     return c.json({ ...organization, contacts });
+  });
+
+  // Every saved version of the entity, newest first, with what each one changed (CHUD-36).
+  routes.get("/organizations/:id/history", async (c) => {
+    const id = parseId(c.req.param("id"));
+    if (!(await one(pool, "SELECT 1 FROM organization WHERE organization_id = $1", [id]))) {
+      throw notFound("Organization");
+    }
+    return c.json({ data: await getHistory(pool, [{ table: "organization", rowId: id }]) });
   });
 
   routes.post("/organizations", async (c) => {

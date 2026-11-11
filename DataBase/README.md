@@ -142,15 +142,20 @@ Every table except `department` and `record_history` has these columns:
 |---|---|
 | `date_created` | When the row was first stored |
 | `date_last_updated` | When it last changed (set automatically) |
-| `last_verified_at` | When the record was last confirmed correct |
+| `last_verified_at` | When the record was last confirmed correct (set on create, on every manual save, and when the refresh confirms the record) |
 | `updated_by_type` | `USER` or `REFRESH` (automatic web refresh) |
 | `updated_by` | Username, or the refresh job's name |
-| `version` | Starts at 1 and goes up by 1 on every update (set automatically) |
+| `version` | Starts at 1 and goes up by 1 on every update that changes a value (set automatically) |
 
 Two trigger functions handle this automatically:
 
 - **`trg_bump_version()`** runs before every update and increments `version` and sets `date_last_updated`.
 - **`trg_write_history()`** runs after every insert, update, and delete and copies the full row (as JSON) into `record_history`, along with who made the change.
+
+`database_add_record_versions.sql` (CHUD-36) refines both: an update that changes nothing, or only
+`last_verified_at`, keeps the same version, last updated date and `updated_by`, and writes no history row.
+So a manual save with no changes, or a refresh that confirms a record is still correct, only moves `last_verified_at`.
+The saved versions are read back newest first by `GET /api/organizations/:id/history` and `GET /api/people/:id/history`.
 
 ### Flagging
 
@@ -179,14 +184,23 @@ Flagging is a normal update, so it bumps the version and is saved in history.
 1. Open the Neon console, select the project and the correct **branch**.
 2. Open the **SQL Editor**.
 3. Run `database_schema.sql` **once**.
-4. Run `database_add_flag_columns.sql`.
+4. Run the add-on files in this order:
+   1. `database_add_flag_columns.sql` (flags, CHUD-10)
+   2. `database_add_website_discovery.sql` (website status and candidates, CHUD-30)
+   3. `database_add_search_usage.sql` (web search log, CHUD-49)
+   4. `database_add_record_versions.sql` (no version for unchanged saves, last verified date, CHUD-36)
 
 From a terminal instead:
 
 ```bash
 psql "<neon connection string>" -f database_schema.sql
 psql "<neon connection string>" -f database_add_flag_columns.sql
+psql "<neon connection string>" -f database_add_website_discovery.sql
+psql "<neon connection string>" -f database_add_search_usage.sql
+psql "<neon connection string>" -f database_add_record_versions.sql
 ```
+
+The add-on files are safe to run again on a database that already has them.
 
 Running `database_schema.sql` a second time fails because the tables already exist. Later changes should be added as new migration files.
 

@@ -2,7 +2,7 @@
 // See frontend/README.md → "AI assistance".
 
 import { useEffect, useState } from "react";
-import { getOrganization, updateOrganization, setOrganizationFlag, listDomains, type Organization, type WebsiteSource, type WebsiteStatusValue } from "../lib/api";
+import { getOrganization, updateOrganization, setOrganizationFlag, listDomains, type Organization, type RecordDates, type WebsiteSource, type WebsiteStatusValue } from "../lib/api";
 import { organizationSchema } from "../lib/validation";
 import { displayUrl, sameWebsite } from "../lib/website";
 import ConfirmDialog from "./ConfirmDialog";
@@ -31,6 +31,18 @@ const toSavedWebsite = (org: Organization): SavedWebsite => ({
 });
 
 type Cleaned = { name: string; domainId: string; websiteUrl: string };
+
+// The record's system dates (CHUD-36, charter 2.3 g.i and g.iv), set by the database
+const toDates = (org: Organization): RecordDates => ({
+  createdAt: org.createdAt,
+  updatedAt: org.updatedAt,
+  verifiedAt: org.verifiedAt,
+});
+function formatDateTime(iso: string) {
+  return iso
+    ? new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })
+    : "—";
+}
 
 // Run the Zod schema and turn its errors into { fieldName: "message" }
 function validate(values: FormValues): Partial<Record<FieldName, string>> {
@@ -67,6 +79,7 @@ export default function OrganizationEditForm({ id }: { id: string }) {
   const [savedWebsite, setSavedWebsite] = useState<SavedWebsite>({ url: "", source: "", updatedAt: "", status: "", suggestions: 0 });
   // Changes waiting for "Replace/Remove the website on file?" to be confirmed (CHUD-30 rule)
   const [pendingSave, setPendingSave] = useState<Cleaned | null>(null);
+  const [dates, setDates] = useState<RecordDates>({ createdAt: "", updatedAt: "", verifiedAt: "" });
 
   // Runs once when the form appears (and again if the id changes):
   // load the entity AND the domain list at the same time
@@ -77,6 +90,7 @@ export default function OrganizationEditForm({ id }: { id: string }) {
         setFlag({ flagged: org.flagged, flagReason: org.flagReason });
         setSavedName(org.name);
         setSavedWebsite(toSavedWebsite(org));
+        setDates(toDates(org));
         setDomains(domainList);
       })
       .catch((err) => setLoadError(err.message));
@@ -132,6 +146,7 @@ export default function OrganizationEditForm({ id }: { id: string }) {
       setValues({ name: saved.name, domainId: saved.domainId, websiteUrl: saved.websiteUrl });
       setSavedName(saved.name);
       setSavedWebsite(toSavedWebsite(saved));
+      setDates(toDates(saved));
       setMessage({ type: "success", text: "Changes saved" });
     } catch (err) {
       setMessage({ type: "error", text: err instanceof Error ? err.message : "Something went wrong. Try again." });
@@ -148,6 +163,7 @@ export default function OrganizationEditForm({ id }: { id: string }) {
     try {
       const saved = await setOrganizationFlag(id, flagged, flagReason);
       setFlag({ flagged: saved.flagged, flagReason: saved.flagReason });
+      setDates(toDates(saved));
       // The yellow banner shows the flag; only confirm when it is removed
       if (!flagged) setMessage({ type: "success", text: "Flag removed" });
     } catch (err) {
@@ -234,6 +250,12 @@ export default function OrganizationEditForm({ id }: { id: string }) {
             {saving ? "Saving…" : "Save changes"}
           </Button>
         </div>
+
+        {/* System dates (CHUD-36): set by the database, not editable */}
+        <p className="mt-4 text-sm text-muted" data-testid="record-dates">
+          Created {formatDateTime(dates.createdAt)} · Last updated {formatDateTime(dates.updatedAt)} · Last verified{" "}
+          {formatDateTime(dates.verifiedAt)}
+        </p>
       </Card>
 
       {confirmOpen && (
