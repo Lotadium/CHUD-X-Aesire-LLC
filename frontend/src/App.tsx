@@ -3,8 +3,9 @@ import AppShell from "./components/AppShell";
 import OrganizationEditForm from "./components/OrganizationEditForm";
 import ContactEditForm from "./components/ContactEditForm";
 import RecordsList from "./pages/RecordsList";
+import RefreshPage from "./pages/RefreshPage";
 
-type View = "records" | "entity" | "contact";
+type View = "records" | "refresh" | "entity" | "contact";
 
 // Temporary page for building and testing the screens.
 // Later, the records list (CHUD-14) will open the edit forms instead of using tabs.
@@ -29,12 +30,14 @@ export default function App() {
     <AppShell>
       <div className="mb-8 flex gap-2">
         {tab("records", "Records list")}
+        {tab("refresh", "Refresh")}
         {tab("entity", "Entity form")}
         {tab("contact", "Contact form")}
       </div>
       {view === "records" && <RecordsList />}
+      {view === "refresh" && <RefreshPage />}
       {view === "entity" && <OrganizationEditForm id="1" />}
       {view === "contact" && <ContactEditForm id="1" />}
     </AppShell>
   );
-}
+}
