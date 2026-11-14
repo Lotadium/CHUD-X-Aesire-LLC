@@ -21,8 +21,9 @@
 - [Architecture](#architecture)
 - [Data model](#data-model)
 - [Repository layout](#repository-layout)
-- [Developer instructions](#developer-instructions)
+- [Getting started](#getting-started)
 - [Testing](#testing)
+- [Contributing](#contributing)
 - [Deployment](#deployment)
 - [Timeline](#timeline)
 - [About the project](#about-the-project)
@@ -147,70 +148,110 @@ available, and records are flagged instead of deleted.
 | `DataBase/` | Schema, add-on SQL files (run in order) and the ERD | [DataBase/README.md](DataBase/README.md) |
 | `Data/` | Loader for the client's test spreadsheet | [Data/README.md](Data/README.md) |
 | `docs/images/` | Logo, ERD and prototype images used in this README | |
+| `.github/` | Pull request template and the CI workflow (automated checks) | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
 ---
 
-## Developer instructions
+## Getting started
 
-> 🚧 **Placeholder: to be completed in CSC 191.** The basics below work today. Each folder's README has the full
-> details.
+### Prerequisites
 
-**You need:** Node.js 24 (or 20+) and npm, Git, and access to the team's Neon project for the real database.
+- **Node.js 24** and npm. The backend runs TypeScript files directly, which needs a recent Node.js.
+- **Git**
+- For the real database only: access to the team's **Neon** project and a **Brave Search API** key (ask the team).
+  You don't need either to run the frontend with fake data or to run the tests.
+
+### Installation
 
 ```bash
-git clone <this repository>
+git clone <repository URL> 
 cd CHUD-X-Aesire-LLC
 
-# Frontend with built-in fake data (no backend or database needed)
-cd frontend
-npm install
-npm run dev            # http://localhost:5173
-
-# Backend API (needs a Neon connection string in backend/.env)
-cd ../backend
-npm install
-npm run local          # http://localhost:8787
+cd frontend && npm install
+cd ../backend && npm install
 ```
 
-**Environment variables** (values are secrets: keep them in git-ignored `.env` / `.env.local` files and never commit them)
+### Configuration
 
-| Name | Where | Used for |
-|---|---|---|
-| `DATABASE_URL` | `backend/.env` | Neon database connection |
-| `BRAVE_API_KEY` | `backend/.env` | Web search for website discovery |
-| `VITE_USE_REAL_API`, `VITE_API_URL`, `VITE_API_USER` | `frontend/.env.local` | Use the real API instead of fake data (see `frontend/.env.example`) |
-| `TEST_DATABASE_URL` | your shell | A throwaway Postgres database for the API tests |
+Settings live in git-ignored files. Copy the examples and fill in your own values, and never commit the copies.
 
-**How we work**
+```bash
+cp backend/.env.example backend/.env                # database connection and Brave key
+cp frontend/.env.example frontend/.env.local        # only to use the real API instead of fake data
+```
 
-1. Pick a Jira ticket and create a branch named `CHUD-<ticket>-<short-description>`. Never work on `main`.
-2. Change only what the ticket needs. Database changes go in a **new** add-on `.sql` file in `DataBase/`, safe to
-   run twice.
-3. Run the tests, then open a pull request into `main` and ask one teammate to review it.
-4. Note any AI help in the file and in that folder's README ("AI use" / "AI assistance").
+| Variable | File | Required | Used for |
+|---|---|---|---|
+| `DATABASE_URL` | `backend/.env` | Yes, for the API | Neon connection string (Neon console → Connect, choose your branch) |
+| `BRAVE_API_KEY`, `BRAVE_SEARCH_ENDPOINT` | `backend/.env` | Yes, for the API | Web search for website discovery and the refresh |
+| `PORT`, `CORS_ORIGIN`, `WEB_SEARCH_MONTHLY_LIMIT`, `CRAWLER_USER_AGENT`, `REFRESH_TIME_BUDGET_MS` | `backend/.env` | No | Port, allowed origins, search limit, crawler name, refresh time limit (defaults in the example file) |
+| `VITE_USE_REAL_API`, `VITE_API_URL`, `VITE_API_USER` | `frontend/.env.local` | No | Use the real API, its address, and your name for the change history |
+| `TEST_DATABASE_URL` | your shell | No | A throwaway local Postgres database for the API tests (never Neon) |
+
+A new Neon branch needs the tables first: run the SQL files in the order in
+[DataBase/README.md](DataBase/README.md#setup-neon).
+
+### Local development
+
+**Frontend only, with fake data** (no backend, database or keys needed):
+
+```bash
+cd frontend
+npm run dev            # http://localhost:5173
+```
+
+**Full app** (backend + frontend against the real database), in two terminals:
+
+```bash
+cd backend
+npm run local          # API on http://localhost:8787 (uses backend/.env)
+```
+
+```bash
+cd frontend            # with frontend/.env.local copied from the example
+npm run dev            # http://localhost:5173
+```
+
+Check the API with `http://localhost:8787/api/health`. More detail is in [frontend/README.md](frontend/README.md) and
+[backend/README.md](backend/README.md).
 
 ---
 
 ## Testing
 
-> 🚧 **Placeholder: to be completed in CSC 191.**
-
-Current automated tests:
+Run the same checks the automated CI runs on every pull request:
 
 ```bash
-cd frontend && npm test      # component and validation tests (Vitest)
-cd backend  && npm test      # unit tests; the web search is always mocked, so no API key or credit is used
+cd frontend
+npm run typecheck      # TypeScript type check
+npm test               # component and validation tests (Vitest)
+npm run build          # production build
+
+cd ../backend
+npm run typecheck
+npm test               # unit tests; the web search is always mocked, so no API key or credit is used
 ```
 
 The backend API tests also run when `TEST_DATABASE_URL` points to a throwaway local Postgres database. They are
 skipped otherwise and refuse to run against Neon. See [backend/README.md](backend/README.md#test-it).
 
+**Automated checks:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs a `frontend` job (type check,
+tests, build) and a `backend` job (type check, tests) on every pull request into `main`. Both must pass before
+merging. The TypeScript type check is the project's static check for now.
+
 **To do in CSC 191:**
 
-- Run the tests automatically on every pull request (continuous integration)
+- Add ESLint and a `lint` check to CI
 - End-to-end tests of the main workflows: search, refresh, new entity, reports
 - Product Owner acceptance testing against the charter requirements (CHUD-45)
-- Test results and coverage summary
+
+---
+
+## Contributing
+
+Work happens on one branch per Jira ticket (`CHUD-<number>-<short-description>`), merged into `main` through a pull
+request that needs passing checks and one approval. New commits need a new approval. Branching, commit messages,
+pull requests, code review and merging are covered in **[CONTRIBUTING.md](CONTRIBUTING.md)**.
 
 ---
 
