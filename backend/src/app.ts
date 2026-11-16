@@ -5,6 +5,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { Pool } from "pg";
 import type { Actor } from "./db.ts";
 import { toHttpError } from "./errors.ts";
+import { activityRoutes } from "./routes/activity.ts";
 import { defaultRefreshDeps } from "./refresh/providers.ts";
 import type { RefreshDeps } from "./refresh/types.ts";
 import { lookupRoutes } from "./routes/lookups.ts";
@@ -54,6 +55,7 @@ export function createApp(pool: Pool, refreshDeps: RefreshDeps = defaultRefreshD
   app.route("/api", refreshRoutes(pool, refreshDeps));
   app.route("/api", searchUsageRoutes(pool));
   app.route("/api", webSearchRoutes(pool));
+  app.route("/api", activityRoutes(pool)); // CHUD-38
 
   app.notFound((c) => c.json({ error: "Not found" }, 404));
 
