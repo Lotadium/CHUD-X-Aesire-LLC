@@ -273,6 +273,7 @@ describe("refresh: API", { skip }, () => {
       "database_add_website_discovery.sql",
       "database_add_search_usage.sql",
       "database_add_refresh.sql", // refresh_run / refresh_item (CHUD-35)
+      "database_add_activity_log.sql", // activity_log (CHUD-38)
     ]) {
       await pool.query(readFileSync(new URL(`../../DataBase/${file}`, import.meta.url), "utf8"));
     }
