@@ -1,4 +1,5 @@
 // AI use: written with AI help from OpenAI GPT-5.6 (Luna), directed by Kyle Tran
+// Matching a contact by a known email before the name (CHUD-35) was added with AI help from Claude Code (Sonnet 5.5), directed by Irene Riva.
 import { createRequire } from "node:module";
 import {
   getLinks,
@@ -29,6 +30,8 @@ export type CrawlFailure = {
 export type ContactCrawlResult = {
   contact: Contact;
   found: boolean;
+  /** How the contact was recognized on the page: by a known email address, or by name. */
+  matchedBy?: "email" | "name";
   pagesVisited: string[];
   failures: CrawlFailure[];
 };
@@ -246,13 +249,140 @@ function isLikelyContactBlock(block: DOMElement): boolean {
   return semanticTag || contactClass || hasContactSignal(block);
 }
 
-function findContactBlock(
+/** Lowercase, de-duplicated, valid addresses we already know for the contact. */
+function knownEmails(target: ContactName): string[] {
+  const valid = (target.emails ?? [])
+    .map((address) => clean(address).toLowerCase())
+    .filter((address) => EMAIL_PATTERN.test(address));
+  return [...new Set(valid)];
+}
+
+/** Walk up from `start` to the nearest block that looks like one contact's card. */
+function climbToContactBlock(start: DOMElement): DOMElement | null {
+  let candidate = start.parent() as DOMElement;
+
+  for (let level = 0; level < 8 && candidate.length > 0; level++) {
+    if (
+      clean(candidate.text()).length <= 1_500 &&
+      isLikelyContactBlock(candidate)
+    ) {
+      return candidate;
+    }
+
+    candidate = candidate.parent() as DOMElement;
+  }
+
+  return null;
+}
+
+const CARD_CLASS = /staff|employee|directory|team|person|member|profile|card|bio/i;
+
+/** The address in a mailto: link, lowercased, or "" if the element is not one. */
+function mailtoAddress(element: DOMElement): string {
+  if (!element.is('a[href^="mailto:"]')) return "";
+  const href = element.attr("href") ?? "";
+
+  try {
+    return decodeURIComponent(href)
+      .replace(/^mailto:/i, "")
+      .split("?")[0]
+      .trim()
+      .toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+/** True if the block holds an email address that is not one of `emails`: it is more than one person's card. */
+function hasOtherEmail(block: DOMElement, emails: string[]): boolean {
+  const found = new Set<string>();
+
+  block.find('a[href^="mailto:"]').each((_, element) => {
+    const address = mailtoAddress(block.find(element) as DOMElement);
+    if (address) found.add(address);
+  });
+
+  const text = block.text().toLowerCase();
+  for (const match of text.matchAll(new RegExp(EMAIL_PATTERN.source, "giu"))) {
+    found.add(match[0]);
+  }
+
+  return [...found].some((address) => !emails.includes(address));
+}
+
+/**
+ * From an element that holds the contact's email, find the whole card for that one person:
+ * the nearest list item, table row, article, section or "staff/team/profile" block that does not
+ * also contain someone else's email. If the page has no such block, fall back to the nearest block.
+ */
+function climbToContactCard(
+  start: DOMElement,
+  emails: string[],
+): DOMElement | null {
+  let candidate = start;
+
+  for (let level = 0; level < 8 && candidate.length > 0; level++) {
+    const element = candidate.get(0);
+    if (!element || element.type !== "tag") break;
+
+    if (hasOtherEmail(candidate, emails)) break; // gone past this contact's own card
+
+    const tagName = element.name.toLowerCase();
+    const isCard =
+      ["article", "li", "tr", "section"].includes(tagName) ||
+      CARD_CLASS.test(candidate.attr("class") ?? "");
+
+    if (isCard && clean(candidate.text()).length <= 1_500) return candidate;
+
+    candidate = candidate.parent() as DOMElement;
+  }
+
+  return climbToContactBlock(start);
+}
+
+/**
+ * Find the contact by an email address we already have: a mailto: link, or the address written
+ * in the page text. This finds the right person even when the website spells the name differently
+ * (a nickname, a middle name, "Dr.").
+ */
+function findBlockByEmail(
+  page: DOMTree,
+  emails: string[],
+): DOMElement | null {
+  const mentionsEmail = (element: DOMElement): boolean => {
+    if (emails.includes(mailtoAddress(element))) return true;
+    const text = element.text().toLowerCase();
+    return emails.some((address) => text.includes(address));
+  };
+
+  let result: DOMElement | null = null;
+
+  page("*").each((_, element) => {
+    if (result) return;
+
+    const emailElement = page(element) as DOMElement;
+    if (!mentionsEmail(emailElement)) return;
+
+    // Use the innermost element that holds the address, not every parent of it.
+    const childMentions = emailElement
+      .children()
+      .toArray()
+      .some((child) => mentionsEmail(page(child) as DOMElement));
+    if (childMentions) return;
+
+    const block = climbToContactCard(emailElement, emails);
+    if (block) result = block;
+  });
+
+  return result;
+}
+
+/** Find the contact by name. */
+function findBlockByName(
   page: DOMTree,
   target: ContactName,
 ): DOMElement | null {
   const nameTokens = tokenizeName(target);
-
-  page("script, style, noscript, svg, img, template").remove();
 
   let result: DOMElement | null = null;
 
@@ -273,22 +403,28 @@ function findContactBlock(
     if (childContainsName) return;
 
     // Start at the name and walk upward until the nearest contact container.
-    let candidate = nameElement.parent() as DOMElement;
-
-    for (let level = 0; level < 8 && candidate.length > 0; level++) {
-      if (
-        clean(candidate.text()).length <= 1_500 &&
-        isLikelyContactBlock(candidate)
-      ) {
-        result = candidate;
-        return;
-      }
-
-      candidate = candidate.parent() as DOMElement;
-    }
+    const block = climbToContactBlock(nameElement);
+    if (block) result = block;
   });
 
   return result;
+}
+
+/** Match by the contact's known email first, then by name. */
+function findContactBlock(
+  page: DOMTree,
+  target: ContactName,
+): { block: DOMElement; by: "email" | "name" } | null {
+  page("script, style, noscript, svg, img, template").remove();
+
+  const emails = knownEmails(target);
+  if (emails.length > 0) {
+    const byEmail = findBlockByEmail(page, emails);
+    if (byEmail) return { block: byEmail, by: "email" };
+  }
+
+  const byName = findBlockByName(page, target);
+  return byName ? { block: byName, by: "name" } : null;
 }
 
 function extractEmail(
@@ -417,6 +553,7 @@ export async function crawlContact(
     sourceUrl: NOT_FOUND,
   };
   let matched = false;
+  let matchedBy: "email" | "name" | undefined;
   const pagesVisited: string[] = [];
   let robots;
   try {
@@ -469,12 +606,13 @@ export async function crawlContact(
 
         pagesVisited.push(current.url);
 
-        const block = findContactBlock(page, target);
-        if (block) {
+        const found = findContactBlock(page, target);
+        if (found) {
           matched = true;
+          if (!matchedBy || found.by === "email") matchedBy = found.by;
           contact = mergeContact(
             contact,
-            extractContact(page, block, target, current.url),
+            extractContact(page, found.block, target, current.url),
           );
         }
 
@@ -522,6 +660,7 @@ export async function crawlContact(
   return {
     contact,
     found: matched,
+    matchedBy,
     pagesVisited,
     failures,
   };

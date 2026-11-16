@@ -27,18 +27,28 @@ export type WebsiteInfo = {
   websiteSuggestions: number; // suggested websites waiting for review (0 to 3)
 };
 
+// System dates every record has (CHUD-36, charter 2.3 g.i): set by the database, never typed in.
+// Dates as ISO text, or "" when unknown.
+export type RecordDates = {
+  createdAt: string;
+  updatedAt: string; // last real change (a save with no changes leaves it alone)
+  verifiedAt: string; // last time a person or the refresh confirmed the record
+};
+
 // Like the real API: a website that is already set is only replaced or cleared when confirmed
 export type UpdateOptions = { confirmOverwrite?: boolean };
 
-// The shape of an organization: the form fields plus an id, its flag, and where its website came from
-export type Organization = z.infer<typeof organizationSchema> & { id: string } & Flag & WebsiteInfo;
+// The shape of an organization: the form fields plus an id, its flag, where its website came from, and its dates
+export type Organization = z.infer<typeof organizationSchema> & { id: string } & Flag & WebsiteInfo & RecordDates;
 
 // Pretend database (resets every time the page reloads)
 const organizations: Organization[] = [
   { id: "1", name: "Sacramento Metro Fire", domainId: "1", websiteUrl: "https://metrofire.ca.gov/", flagged: false, flagReason: "",
-    websiteSource: "auto", websiteUpdatedAt: "2026-10-20T19:00:00Z", websiteStatus: "FOUND", websiteSuggestions: 0 },
+    websiteSource: "auto", websiteUpdatedAt: "2026-10-20T19:00:00Z", websiteStatus: "FOUND", websiteSuggestions: 0,
+    createdAt: "2026-10-05T16:30:00Z", updatedAt: "2026-10-20T19:00:00Z", verifiedAt: "2026-10-28T17:15:00Z" },
   { id: "2", name: "Folsom Water District", domainId: "2", websiteUrl: "", flagged: false, flagReason: "",
-    websiteSource: "", websiteUpdatedAt: "", websiteStatus: "NOT_SEARCHED", websiteSuggestions: 0 },
+    websiteSource: "", websiteUpdatedAt: "", websiteStatus: "NOT_SEARCHED", websiteSuggestions: 0,
+    createdAt: "2026-10-05T16:30:00Z", updatedAt: "2026-10-05T16:30:00Z", verifiedAt: "2026-10-05T16:30:00Z" },
 ];
 
 // Options for the "Domain" dropdown (Ryan's domain table)
@@ -87,6 +97,11 @@ export async function updateOrganization(id: string, changes: Partial<Organizati
       next.websiteSuggestions = 0;
     }
   }
+  // Dates like the real database (CHUD-36): saving confirms the record; only a real change updates it
+  const now = new Date().toISOString();
+  const values = (o: Organization) => JSON.stringify({ ...o, updatedAt: "", verifiedAt: "" });
+  if (values(before) !== values(next)) next.updatedAt = now;
+  next.verifiedAt = now;
   organizations[index] = next;
   return { ...organizations[index] };
 }

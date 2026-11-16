@@ -80,6 +80,10 @@ type ApiOrganization = {
   website_source?: "AUTO" | "MANUAL" | null;
   website_updated_at?: string | null;
   website_candidates?: { url: string; page_title: string | null }[] | null;
+  // System dates (CHUD-36)
+  date_created?: string | null;
+  date_last_updated?: string | null;
+  last_verified_at?: string | null;
 } & ApiFlag;
 type ApiPosition = {
   position_id: number;
@@ -129,6 +133,9 @@ function toOrganization(o: ApiOrganization): Organization {
     websiteUrl: nullToBlank(o.website_url),
     ...toFlag(o),
     ...toWebsiteInfo(o),
+    createdAt: o.date_created ?? "",
+    updatedAt: o.date_last_updated ?? "",
+    verifiedAt: o.last_verified_at ?? "",
   };
 }
 

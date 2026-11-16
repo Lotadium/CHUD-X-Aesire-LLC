@@ -31,12 +31,13 @@ export function Card({ title, subtitle, aside, children }: { title: string; subt
   );
 }
 
-type ButtonProps = ComponentProps<"button"> & { variant?: "primary" | "secondary" | "warning-ghost" };
+type ButtonProps = ComponentProps<"button"> & { variant?: "primary" | "secondary" | "warning-ghost" | "success" };
 
 const buttonStyles = {
   primary: "bg-brand text-ink hover:bg-brand-hover",
   secondary: "border border-line bg-white text-ink hover:bg-slate-50",
   "warning-ghost": "text-amber-800 hover:bg-amber-50",
+  success: "bg-green-700 text-white hover:bg-green-800", // "Done" in the all-verified pop-up
 };
 
 export function Button({ variant = "primary", className = "", ...props }: ButtonProps) {

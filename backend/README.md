@@ -38,6 +38,8 @@ All the tests run with one command, `npm test`. The unit tests need nothing else
 |------|---------------|-------|
 | `test/rank.test.ts` | Website ranking (CHUD-48): official site chosen, directory/news/social sites ranked low, low-confidence results flagged, using sample results for a fire district, water district, city, county agency and special district (`test/fixtures/search-results.ts`) | nothing |
 | `test/search.test.ts` | Web search (CHUD-29) with the Brave API mocked: query building, the `/api/web-search` route, and that the ranking result is a valid discovery request for CHUD-30 | nothing |
+| `test/history.test.ts` | Version history (CHUD-36): what each saved version changed, ignoring the audit columns | nothing |
+| `test/refresh.test.ts` | The data refresh (CHUD-35) with the web search and contact lookup replaced by fakes: matching rules, updating in place without duplicates, verified/unverified reasons, one failure not stopping a run, batches and progress | `TEST_DATABASE_URL` for the API part (the matching rules need nothing) |
 | `test/api.test.ts` | The whole API, including saving discovery results (CHUD-30): high confidence saves, low confidence goes to review, an existing URL is not overwritten without confirmation | `TEST_DATABASE_URL` |
 
 **The tests never call the real Brave API or use search credit.** `npm test` loads `test/setup.ts` first, which
@@ -45,7 +47,7 @@ replaces `BRAVE_API_KEY` and `BRAVE_SEARCH_ENDPOINT` with fake values (even if r
 tests mock `fetch`; an unmocked network call fails the test.
 
 The API tests run against a **throwaway local Postgres** built from the schema files in `DataBase/` (the base schema, then the
-flag and website-discovery add-ons). They wipe the
+flag, website-discovery, search-usage and refresh add-ons). They wipe the
 database each run, so they refuse to run against Neon or any database without `test` in its name.
 
 ```bash
@@ -122,6 +124,7 @@ curl -X PUT http://localhost:8787/api/organizations/1 -H "Content-Type: applicat
 | GET | `/api/organizations` | Optional `?domain_id=` and `?website_status=` (NOT_SEARCHED, FOUND, NEEDS_REVIEW, NOT_FOUND). Each row includes `domain_name`, the website fields and `website_candidates` |
 | POST | `/api/organizations` | `{ domain_id, name, website_url? }` |
 | GET | `/api/organizations/:id` | Includes `contacts`: the people who work there |
+| GET | `/api/organizations/:id/history` | Saved versions, newest first (see [Version history](#version-history-chud-36)) |
 | PUT/PATCH | `/api/organizations/:id` | Any of `domain_id`, `name`, `website_url`, `is_flagged`, `flag_reason`. Changing `website_url` follows the website rules below |
 | PUT | `/api/organizations/:id/website` | Set the website by hand: `{ url, confirm_overwrite? }` |
 | POST | `/api/organizations/:id/website/discovery` | Save a website-discovery result (see below) |
@@ -134,6 +137,7 @@ curl -X PUT http://localhost:8787/api/organizations/1 -H "Content-Type: applicat
 | GET | `/api/people` | Optional `?organization_id=`. Each person includes `positions` and `emails` |
 | POST | `/api/people` | Person fields, plus optional `positions: [...]` and `emails: [...]`, saved all-or-nothing |
 | GET | `/api/people/:id` | |
+| GET | `/api/people/:id/history` | Saved versions of the person and their positions and emails, newest first |
 | PUT/PATCH | `/api/people/:id` | Person fields, `is_flagged`, `flag_reason` |
 | POST | `/api/people/:id/positions` | `{ organization_id, department_id?, title?, additional_title?, phone?, phone_ext?, mobile_phone?, fax? }` |
 | PUT/PATCH | `/api/positions/:id` | Position fields, `is_flagged`, `flag_reason` |
@@ -154,6 +158,22 @@ in the same transaction as the change, so a failed change logs nothing. Setting 
 FLAGGED; any other edit (including removing a flag) is MANUAL_UPDATE with the changed fields in `detail`. Website
 discovery results are logged as the refresh: REFRESH_SUCCESS when a URL is saved or confirmed, REFRESH_ATTEMPT for
 needs review or no match. Code: `src/activity.ts` (`logActivity`) and `src/routes/activity.ts`.
+## Version history (CHUD-36)
+
+Every response includes `date_created`, `date_last_updated`, `last_verified_at` and `version`. All changes go through
+`updateRow` in `src/db.ts`, for people and for the refresh alike, and the database does the versioning
+(`DataBase/database_add_record_versions.sql`):
+
+- A save that changes a value creates a new version: `version` goes up, `date_last_updated` is set, and the row is
+  copied into `record_history` with the time, who made it and `USER` or `REFRESH`.
+- A save that changes nothing creates no version and no history row. It only sets `last_verified_at`.
+- Only manual saves (`USER`) set `last_verified_at`. A `REFRESH` save does not; the refresh (CHUD-35) marks a record
+  verified with `verifyRow` in `src/db.ts`, which changes nothing else.
+
+The history endpoints return `{ "data": [...] }`, newest first. Each entry has `record` (`organization`, `person`,
+`position` or `email`), `row_id`, `version`, `operation` (`INSERT`, `UPDATE`), `changed_at`, `changed_by_type`,
+`changed_by`, `changes` (`[{ field, from, to }]` compared with the previous version) and `data` (the whole record
+after that change).
 
 ## Website discovery (CHUD-30)
 
@@ -208,6 +228,70 @@ curl -X POST http://localhost:8787/api/people \
       }'
 ```
 
+## Data refresh (CHUD-35)
+
+A refresh checks records against their websites and updates them **in place**. It works through the chosen records
+one at a time, a few per request, because the front end polls for progress (the progress bar, CHUD-33) and every
+request has a time limit. Tables: `DataBase/database_add_refresh.sql` (`refresh_run`, `refresh_item`; run it after
+`database_add_search_usage.sql`; safe to run more than once).
+
+| Endpoint | What it does |
+|---|---|
+| `POST /api/refresh` | Starts a run. Body: exactly one of `{ "organization_ids": [1, 2] }`, `{ "domain_id": 3 }` or `{ "all": true }`. Does no work yet; returns the run (201). Flagged records are never included |
+| `POST /api/refresh/:id/process` | Does the next records of the run. Optional body `{ "batch_size": 3 }` (1 to 10; default 3). Stops early after `REFRESH_TIME_BUDGET_MS` (default 20000). Call it again until `status` is `COMPLETE`. Safe to repeat: finished records are not redone |
+| `GET /api/refresh/:id` | Progress and summary, without doing any work |
+| `GET /api/refresh` | Past runs, newest first (`limit`, `offset`), each with its counts: how many refreshes were done, by whom, and how they went |
+
+Every response is the same summary:
+
+```json
+{ "run_id": 7, "status": "RUNNING", "total": 40, "processed": 12, "percent_complete": 30,
+  "verified": 9, "unverified": 3, "updated": 5,
+  "unverified_records": [{ "organization_id": 5, "name": "City of Alpha", "reason_code": "CONTACT_NOT_LISTED",
+                           "reason": "Sam Lee: Requested contact was not found on the crawled pages", "changed": false }],
+  "requested_by": "irene", "created_at": "…", "finished_at": null }
+```
+
+The progress bar is `processed / total` ("10 of 50 records processed, 20%": `percent_complete`). Once `COMPLETE`, the
+finish message is `verified`, `updated` (records where the refresh saved a change: a new website or new contact details)
+and `unverified`, with the `unverified_records` listed. A record can be unverified and still `changed: true` when the
+details it did find were saved.
+
+**For each record:**
+
+1. If it has no website, search for one (CHUD-29), rank the results (CHUD-48) and save the result as in CHUD-30:
+   a confident match is saved as an automatic change; a low-confidence one goes to the review list and the record is
+   unverified (`WEBSITE_NEEDS_REVIEW`). Each search is counted toward the monthly usage (CHUD-49), and no search is made
+   once `WEB_SEARCH_MONTHLY_LIMIT` is reached (`SEARCH_LIMIT_REACHED`).
+2. Look up each contact we already have there (people with a position at this record, not flagged) on the website
+   (CHUD-34). **Email first, then name:** the contact's stored email addresses (flagged ones excluded) are looked for on
+   the page first, as a `mailto:` link or as text, so a name written differently on the website (a nickname, a middle
+   name) still finds the right person; only if none is there is the name used.
+3. Compare and write **only what changed**, in one transaction:
+   - Title and phone go on the person's position. A phone number in another format ("(916) 555-0100" vs
+     "+1-916-555-0100") is not a change. A value the website does not show is never blanked. A phone is saved only if
+     it has exactly 10 digits (charter 2.3 e.iv); anything else counts as not found.
+   - Email: an address we already have is left alone. If the contact has exactly one email and the website shows a
+     different one, that row is updated (the old address stays in `record_history`). If the contact has none or
+     several, the new address is added. An address that already belongs to **another** contact is never moved; it is
+     reported as `EMAIL_BELONGS_TO_OTHER_CONTACT`.
+   - Rows are never added for contacts we already have, and no entity is added. **Adding contacts the website lists
+     that we do not have is out of scope** (the lookup works from a known name).
+   - Every change is recorded as made by the refresh (`updated_by_type` `REFRESH`, shown in `record_history`), with the
+     requester's `X-User` as `updated_by`. Rows the refresh confirmed get `last_verified_at`.
+4. The record is **verified** when it has a website and every contact was found on it with at least one detail.
+   Otherwise it is **unverified** with a `reason_code` (`NO_WEBSITE_FOUND`, `WEBSITE_NEEDS_REVIEW`, `SEARCH_FAILED`,
+   `SEARCH_LIMIT_REACHED`, `SITE_UNREACHABLE`, `CONTACT_NOT_LISTED`, `NO_CONTACT_DATA`,
+   `EMAIL_BELONGS_TO_OTHER_CONTACT`, `LOOKUP_UNAVAILABLE`, `RECORD_UNAVAILABLE`, `ERROR`) and a reason in words.
+   Details found for the other contacts are still saved.
+
+**One failed record never stops the run:** any error is caught, the record is reported as unverified (`ERROR`), and
+the next one starts. Two requests polling at once never process the same record (each record is claimed by a single
+statement), and a record claimed by a request that died is picked up again after 5 minutes.
+
+The web search and the contact lookup are passed to `createApp(pool, deps)` (`src/refresh/types.ts`), so tests use
+fakes. The real ones are in `src/refresh/providers.ts`.
+
 ## Layout
 
 ```
@@ -216,12 +300,17 @@ backend/
   functions/api.ts     entry point: creates the connection pool and the app
   src/app.ts           routes, CORS, error handling
   src/routes/          lookups, organizations, people
-  src/db.ts            transactions (records who made a change) and insert/update helpers
+  src/db.ts            transactions (records who made a change) and insert/update/verify helpers
+  src/history.ts       reads saved versions and works out what each one changed (CHUD-36)
   src/validate.ts      input checks
   src/errors.ts        turns database errors into clean 400/404/409 responses
   src/ranking/rank.ts  scores web search results and picks the official website (CHUD-48)
+  src/refresh/         data refresh (CHUD-35): the run engine, contact matching, the real search/lookup services
+  src/routes/refresh.ts  the /api/refresh endpoints
   test/api.test.ts     integration tests
   test/rank.test.ts    unit tests for the ranking rules
+  test/history.test.ts unit tests for comparing versions
+  test/refresh.test.ts tests for the data refresh
   test/search.test.ts  web search tests with the Brave API mocked
   test/setup.ts        fake Brave settings, loaded before every test file
   test/fixtures/       sample search results for each entity type
@@ -230,7 +319,7 @@ backend/
 ## AI use
 
 - **AI used:** Yes.
-- **Tool and model:** Claude Code (Sonnet 5.5; Opus 5.5 for CHUD-48 and CHUD-32).
+- **Tool and model:** Claude Code (Sonnet 5.5; Opus 5.5 for CHUD-48, CHUD-32 and CHUD-36).
 - **How it was made:** written with AI help from Claude Code, directed by Irene Riva. Working from Irene's requests,
   Ryan's schema (`DataBase/database_schema.sql`) and Neon's documentation, Claude Code wrote the code in `backend/`
   (routes, validation, error handling, database helpers), the integration tests and this README. That includes the
@@ -249,6 +338,16 @@ backend/
    For CHUD-38, directed by Rachel Wong: working from the ticket's acceptance criteria and the existing routes, Claude wrote the `activity_log` table, `src/activity.ts`, `src/routes/activity.ts`, the logging calls in the routes, and
   the activity log tests in `test/api.test.ts`. Rachel reviewed the code and ran the tests.
 
+  For CHUD-36, directed by Ryan Griffiths: Claude Code wrote the versioning add-on SQL, the `updateRow`/`verifyRow`
+  changes, the history endpoints (`src/history.ts`), the dates on the entity form, the tests and these docs.
+  Ryan set the requirements and reviewed each step.
+  
+  For CHUD-35, directed by Irene Riva: working from the ticket's acceptance criteria and the existing CHUD-13, 29,
+  30, 48 and 49 code, Claude Code wrote the refresh (`src/refresh/`, `src/routes/refresh.ts`,
+  `DataBase/database_add_refresh.sql`), its tests (`test/refresh.test.ts`) and the section above. Irene directed the
+  work and decided its scope (existing contacts only); the matching rules for emails are a design choice that still
+  needs a teammate's review. Claude Code also added the "known email first, then name" matching to Kyle's crawler
+  (`src/scrape/scraper.ts`) after a review comment.
 - **Peer review:** pending, in the pull request.
 
 Every source file starts with a short AI-use note that points here.

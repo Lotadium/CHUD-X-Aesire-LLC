@@ -179,3 +179,26 @@ test("a bad website is not saved, and the link stays the same", async () => {
   expect(screen.getByRole("link")).toHaveAttribute("href", toHref(before)); // the link adds https:// when missing
   expect((await getOrganization("1")).websiteUrl).toBe(before);
 });
+
+// ---------- System dates (CHUD-36, charter 2.3 g.i and g.iv) ----------
+
+test("shows when the entity was created, last updated and last verified", async () => {
+  render(<OrganizationEditForm id="1" />);
+  const dates = await screen.findByTestId("record-dates");
+  expect(dates).toHaveTextContent(/Created Oct 5, 2026/);
+  expect(dates).toHaveTextContent(/Last updated \w{3} \d{1,2}, \d{4}/);
+  expect(dates).toHaveTextContent(/Last verified \w{3} \d{1,2}, \d{4}/);
+});
+
+test("saving without changes moves last verified but not last updated", async () => {
+  const user = userEvent.setup();
+  const { getOrganization } = await import("../lib/api");
+  const before = await getOrganization("1");
+  render(<OrganizationEditForm id="1" />);
+  await screen.findByLabelText(/Entity Name/);
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(await screen.findByText("Changes saved")).toBeInTheDocument();
+  const after = await getOrganization("1");
+  expect(after.updatedAt).toBe(before.updatedAt);
+  expect(after.verifiedAt).not.toBe(before.verifiedAt);
+});

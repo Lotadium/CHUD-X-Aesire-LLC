@@ -5,6 +5,7 @@ import { describeUpdate, logActivity } from "../activity.ts";
 import type { AppEnv } from "../app.ts";
 import { insertRow, one, updateRow, withTransaction, type Queryable } from "../db.ts";
 import type { FieldErrors } from "../errors.ts";
+import { getHistory } from "../history.ts";
 import { notFound, readJson } from "../http.ts";
 import {
   collectFields,
@@ -44,7 +45,7 @@ const EMAIL_FIELDS: Schema = {
 const MAX_NESTED = 50;
 
 /** The email table also stores the domain and TLD "entered with record". */
-function withEmailParts(fields: Parsed): Parsed {
+export function withEmailParts(fields: Parsed): Parsed {
   if (typeof fields.address !== "string") return fields;
   const domain = fields.address.slice(fields.address.lastIndexOf("@") + 1);
   const tld = domain.slice(domain.lastIndexOf(".") + 1);
@@ -131,6 +132,19 @@ export function peopleRoutes(pool: Pool) {
     const person = await getPerson(pool, parseId(c.req.param("id")));
     if (!person) throw notFound("Person");
     return c.json(person);
+  });
+
+  // Every saved version of the contact, newest first (CHUD-36): the person and their
+  // positions and emails together. `record` on each entry says which one changed.
+  routes.get("/people/:id/history", async (c) => {
+    const id = parseId(c.req.param("id"));
+    await requirePerson(pool, id);
+    const data = await getHistory(pool, [
+      { table: "person", rowId: id },
+      { table: "position", column: "person_id", value: id },
+      { table: "email", column: "person_id", value: id },
+    ]);
+    return c.json({ data });
   });
 
   // Create a person, optionally with positions and emails, in one go (all or nothing).
