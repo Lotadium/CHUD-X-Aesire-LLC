@@ -1,3 +1,5 @@
+// AI use: listContactsForOrganization was written with Cline using Gemini 3.5 Flash Lite (AI assistant). Reviewed and tested by Irene Riva. See frontend/README.md → "AI assistance".
+
 // FAKE API: stores data in memory so I can build the forms before the real API is ready.
 // When the real API is done, replace the inside of each function with a fetch() call.
 import type { z } from "zod";
@@ -152,4 +154,9 @@ export async function updateContact(id: string, changes: Partial<Contact>): Prom
 export async function setContactFlag(id: string, flagged: boolean, reason = ""): Promise<Contact> {
   if (flagged && reason.trim() === "") throw new Error("A reason is required to flag a record.");
   return updateContact(id, { flagged, flagReason: flagged ? reason.trim() : "" });
+}
+
+export async function listContactsForOrganization(orgId: string): Promise<Contact[]> {
+  await delay();
+  return contacts.filter((c) => c.organizationId === orgId).map((c) => ({ ...c }));
 }

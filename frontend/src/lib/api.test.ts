@@ -1,6 +1,6 @@
 import { test, expect } from "vitest";
 import * as api from "./api";
-import { getOrganization, updateOrganization, setOrganizationFlag, listOrganizations, getContact, updateContact, setContactFlag } from "./api";
+import { getOrganization, updateOrganization, setOrganizationFlag, listOrganizations, getContact, updateContact, setContactFlag, listContactsForOrganization } from "./api";
 
 // ---------- Organizations ----------
 
@@ -34,6 +34,12 @@ test("flags an organization without removing it, and can unflag it", async () =>
 test("gets a contact", async () => {
   const contact = await getContact("1");
   expect(contact.lastName).toBe("Lopez");
+});
+
+test("lists contacts for an organization", async () => {
+  const contacts = await listContactsForOrganization("1");
+  expect(contacts.length).toBeGreaterThan(0);
+  expect(contacts[0].lastName).toBe("Lopez");
 });
 
 test("updates a contact", async () => {

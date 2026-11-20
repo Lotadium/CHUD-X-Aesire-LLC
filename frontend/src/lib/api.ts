@@ -22,3 +22,4 @@ export const listOrganizations = api.listOrganizations;
 export const getContact = api.getContact;
 export const updateContact = api.updateContact;
 export const setContactFlag = api.setContactFlag;
+export const listContactsForOrganization = api.listContactsForOrganization;

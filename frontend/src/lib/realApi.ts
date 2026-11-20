@@ -241,3 +241,8 @@ export async function setContactFlag(id: string, flagged: boolean, reason = ""):
   await sendFlag(`/people/${id}`, flagged, reason);
   return getContact(id);
 }
+
+export async function listContactsForOrganization(orgId: string): Promise<Contact[]> {
+  const res = await request<{ data: ApiPerson[] }>(`/people?organization_id=${encodeURIComponent(orgId)}`);
+  return res.data.map(toContact);
+}
