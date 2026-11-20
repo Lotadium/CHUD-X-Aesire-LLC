@@ -236,7 +236,8 @@ The backend API tests also run when `TEST_DATABASE_URL` points to a throwaway lo
 skipped otherwise and refuse to run against Neon. See [backend/README.md](backend/README.md#test-it).
 
 **Automated checks:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs a `frontend` job (type check,
-tests, build) and a `backend` job (type check, tests) on every pull request into `main`. Both must pass before
+tests, build) and a `backend` job (type check, tests, including the API tests against a throwaway Postgres service)
+on every pull request into `main`. Both must pass before
 merging. The TypeScript type check is the project's static check for now.
 
 **To do in CSC 191:**

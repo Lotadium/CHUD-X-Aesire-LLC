@@ -33,8 +33,8 @@ CHUD-<number>: <what changed, in a short sentence>
 - Start with the Jira ticket, e.g. `CHUD-36: only manual saves set last_verified_at`.
 - Keep the first line under about 72 characters. Write what the commit does, not what you did that day.
 - One logical change per commit, and no unrelated changes.
-- If an AI tool helped write the change, end with a co-author line naming the tool and model, for example
-  `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- Don't add AI co-author lines to commits. If an AI tool helped, disclose it in the pull request's **AI use**
+  section ([template](.github/pull_request_template.md)), the file header, and the folder README's AI use section.
 - Never commit secrets, `.env` files, connection strings or real client data.
 
 ## Pull requests
@@ -59,7 +59,7 @@ CHUD-<number>: <what changed, in a short sentence>
 
 **Reviewers**
 
-- Review within **2 days** of the request, or tell the author when you can.
+- Review within **24 hours** of the request, or tell the author when you can.
 - Check that the change does what the ticket asks, the tests cover it, nothing secret or personal is included,
   records are never deleted (they are flagged), and database changes are a new add-on `.sql` file.
 - Choose **Approve**, **Comment** (questions or suggestions), or **Request changes** (must be fixed before merging).
