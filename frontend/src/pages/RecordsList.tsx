@@ -253,7 +253,7 @@ export default function RecordsList() {
                     </span>
                   </td>
                   <td className={`${td} font-semibold`}>
-                    {r.entity}
+                    <a href={`#/records/${r.orgId}`} className="hover:underline">{r.entity}</a>
                     {r.flagged && (
                       <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
                         <FlagIcon /> Flagged
