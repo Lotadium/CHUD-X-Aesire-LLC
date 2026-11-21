@@ -169,8 +169,10 @@ export async function listOrganizations(): Promise<{ id: string; name: string }[
 // (and any flagged emails, in case the user types one of them back in)
 const linkedRows = new Map<string, { positionId?: number; emailId?: number; flaggedEmails?: ApiEmail[] }>();
 
-function toContact(p: ApiPerson): Contact {
-  const pos = p.positions[0];
+// `orgId`: when listing one organization's contacts, show the position held at THAT organization
+// (a person can hold positions at several). Without it, the first position is used.
+function toContact(p: ApiPerson, orgId?: string): Contact {
+  const pos = (orgId !== undefined && p.positions.find((x) => String(x.organization_id) === orgId)) || p.positions[0];
   // Emails are never deleted (charter 2.3 f.iv): a removed email is flagged, so show the first unflagged one
   const email = p.emails.find((e) => !e.is_flagged);
   const flaggedEmails = p.emails.filter((e) => e.is_flagged);
@@ -242,7 +244,17 @@ export async function setContactFlag(id: string, flagged: boolean, reason = ""):
   return getContact(id);
 }
 
+// The API sends at most 200 people per page, so keep asking until all `total` have arrived
+const CONTACTS_PAGE_SIZE = 200;
+
 export async function listContactsForOrganization(orgId: string): Promise<Contact[]> {
-  const res = await request<{ data: ApiPerson[] }>(`/people?organization_id=${encodeURIComponent(orgId)}`);
-  return res.data.map(toContact);
+  const people: ApiPerson[] = [];
+  for (let offset = 0; ; offset += CONTACTS_PAGE_SIZE) {
+    const res = await request<{ data: ApiPerson[]; total: number }>(
+      `/people?organization_id=${encodeURIComponent(orgId)}&limit=${CONTACTS_PAGE_SIZE}&offset=${offset}`,
+    );
+    people.push(...res.data);
+    if (res.data.length === 0 || people.length >= res.total) break;
+  }
+  return people.map((p) => toContact(p, orgId));
 }

@@ -80,6 +80,8 @@ On CHUD-64 (record page), I (Irene Riva) used two assistants. Cline with Gemini 
 added `listContactsForOrganization` to `fakeApi.ts`, `realApi.ts`, `api.ts` and its test in `api.test.ts`.
 Claude Code (Sonnet 5.5) wrote `RecordPage.tsx`, `RecordPage.test.tsx`, and the small changes to `App.tsx`
 and `RecordsList.tsx`, after Cline's first version of the page did not compile and removed the entity route.
+After Rachel's review, Claude Code also changed the real `listContactsForOrganization` to load every page of
+contacts and use the position held at that organization, and wrote `realApi.contacts.test.ts`.
 I reviewed, ran, and tested all of it.
 
 ## Record page (CHUD-64)
