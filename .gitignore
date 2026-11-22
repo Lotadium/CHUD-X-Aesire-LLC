@@ -1,0 +1,56 @@
+# Project wide gitignore
+# (backend/, frontend/ and Data/ have their own .gitignore for app-specific files)
+
+# AI assistant files
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+.agents/
+skills-lock.json
+
+# Codex
+AGENTS.md
+
+# Local Planning/docs
+/resources/
+
+# API / Private Directories
+/Private/
+
+# Dependencies (installed by npm install; package-lock.json IS committed)
+node_modules/
+
+# Local environment / secrets (the example file is committed)
+.env
+.env.*
+!.env.example
+.neon
+
+# Build output and caches (made by npm run build / typecheck / test)
+dist/
+build/
+coverage/
+.vite/
+*.tsbuildinfo
+
+# Python (Data/read_data.py)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Office lock files (made while a spreadsheet such as Data/AesireTemplateRecord.xlsx is open)
+~$*
+
+# Editor settings
+.vscode/
+.idea/
