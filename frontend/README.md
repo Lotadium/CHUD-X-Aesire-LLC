@@ -76,6 +76,30 @@ On CHUD-31 (show & edit website URL on the entity page), Claude Opus 5.5 wrote t
 `WebsiteStatus` component, the website source/date mapping in `realApi.ts`, the fake data
 changes, and the new tests.
 
+On CHUD-64 (record page), I (Irene Riva) used two assistants. Cline with Gemini 3.5 Flash Lite
+added `listContactsForOrganization` to `fakeApi.ts`, `realApi.ts`, `api.ts` and its test in `api.test.ts`.
+Claude Code (Sonnet 5.5) wrote `RecordPage.tsx`, `RecordPage.test.tsx`, and the small changes to `App.tsx`
+and `RecordsList.tsx`, after Cline's first version of the page did not compile and removed the entity route.
+After Rachel's review, Claude Code also changed the real `listContactsForOrganization` to load every page of
+contacts and use the position held at that organization, and wrote `realApi.contacts.test.ts`.
+I reviewed, ran, and tested all of it.
+
+## Record page (CHUD-64)
+
+`#/records/<id>` opens one organization (click an entity name in the records list, or the **Record page**
+tab). It is read-only:
+
+- the organization's name, domain, website (same box as the entity page) and when it was last updated
+  and last verified, with a **Verified** pill (or **Flagged as no longer valid**)
+- its contacts: name, title, email and phone. A blank value reads "Not Found". A name opens the
+  contact form (`#/contact/<id>`)
+- **Edit** opens the entity form (`#/entity/<id>`); **Refresh** runs a refresh for just this record
+  (`startRefresh([id])`, then `nextRefreshBatch` until it is done) and shows the result
+- an empty **Record history** card where the history panel goes (CHUD-57)
+
+Contacts come from `listContactsForOrganization(orgId)` in `lib/api.ts` (fake data, or
+`GET /api/people?organization_id=<id>` with `VITE_USE_REAL_API=true`).
+
 ## Website on the entity page (CHUD-31)
 
 The entity page shows the website that is **saved**, separate from the Website URL box being
