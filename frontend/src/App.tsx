@@ -6,17 +6,20 @@ import RecordsList from "./pages/RecordsList";
 import RecordPage from "./pages/RecordPage";
 import RefreshPage from "./pages/RefreshPage";
 import ActivityLog from "./pages/ActivityLog";
+// #/activity/<id> (the activity log filtered to one record) was added for the history panel (CHUD-57)
+// with help from Claude Code (Opus 5.5) (AI assistant). Reviewed and tested by Rachel.
 
 type View = "records" | "record" | "refresh" | "entity" | "contact" | "activity";
 
 // Which screen to show comes from the address bar, so a link like #/entity/5 opens entity 5
 // (the activity log links each entry to its record this way, CHUD-38).
-//   #/records   #/records/<id>   #/refresh   #/activity   #/entity/<id>   #/contact/<id>
+//   #/records   #/records/<id>   #/refresh   #/activity   #/activity/<id>   #/entity/<id>   #/contact/<id>
 function readHash(): { view: View; id: string } {
   const [, view, id] = window.location.hash.split("/");
   if (view === "records" && id) return { view: "record", id }; // the record page (CHUD-64)
   if (view === "entity" || view === "contact") return { view, id: id || "1" };
-  if (view === "activity" || view === "refresh") return { view, id: "" };
+  if (view === "activity") return { view, id: id ?? "" }; // #/activity/<id>: filtered to one entity (CHUD-57)
+  if (view === "refresh") return { view, id: "" };
   return { view: "records", id: "" };
 }
 
@@ -60,7 +63,7 @@ export default function App() {
       {/* key: a new id loads a fresh form */}
       {route.view === "entity" && <OrganizationEditForm key={route.id} id={route.id} />}
       {route.view === "contact" && <ContactEditForm key={route.id} id={route.id} />}
-      {route.view === "activity" && <ActivityLog />}
+      {route.view === "activity" && <ActivityLog key={route.id} organizationId={route.id} />}
     </AppShell>
   );
 }

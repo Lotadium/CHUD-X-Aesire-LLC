@@ -66,3 +66,55 @@ test.skipIf(!url)("real API: clearing an email flags it instead of deleting it, 
   expect((await api.updateContact("2", { email: "" })).email).toBe(""); // hidden from the form, kept in the database
   expect((await api.updateContact("2", { email: address })).email).toBe(address); // restored, no duplicate error
 });
+
+// CHUD-57: written with Cline using Gemini 3.5 Flash (AI assistant). Reviewed and tested by Rachel.
+test("real API: reads an organization's history and maps it to the form's names (server faked with a stubbed fetch)", async () => {
+  let requestedUrl = "";
+  const data = [
+    {
+      version: 2,
+      changed_at: "2026-11-22T10:00:00Z",
+      changed_by_type: "USER",
+      changed_by: null,
+      changes: [{ field: "name", from: "Old", to: "New" }],
+    },
+    {
+      version: 1,
+      changed_at: "2026-11-20T10:00:00Z",
+      changed_by_type: "REFRESH",
+      changed_by: "irene",
+      changes: [],
+    },
+  ];
+
+  vi.stubGlobal("fetch", async (url: string | URL) => {
+    requestedUrl = String(url);
+    return new Response(JSON.stringify({ data }), { status: 200 });
+  });
+
+  try {
+    const api = await import("./realApi");
+    const history = await api.getOrganizationHistory("5");
+    expect(requestedUrl.endsWith("/organizations/5/history")).toBe(true);
+    expect(history[0].changedBy).toBe("");
+    expect(history[1].changedBy).toBe("irene");
+    expect(history).toEqual([
+      {
+        version: 2,
+        changedAt: "2026-11-22T10:00:00Z",
+        changedByType: "USER",
+        changedBy: "",
+        changes: [{ field: "name", from: "Old", to: "New" }],
+      },
+      {
+        version: 1,
+        changedAt: "2026-11-20T10:00:00Z",
+        changedByType: "REFRESH",
+        changedBy: "irene",
+        changes: [],
+      },
+    ]);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

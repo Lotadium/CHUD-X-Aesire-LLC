@@ -67,3 +67,10 @@ test("is reachable from the app at #/records/<id>", async () => {
   expect(await screen.findByRole("heading", { name: "Folsom Water District" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Record page" })).toHaveAttribute("aria-current", "page");
 });
+
+// CHUD-57: the history panel fills the Record history card. Added with help from Claude Code (Opus 5.5) (AI assistant). Reviewed and tested by Rachel.
+test("shows the record history panel with the record's versions", async () => {
+  render(<RecordPage id="2" />);
+  expect(await screen.findByText("No earlier versions")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Open activity log for this record" })).toHaveAttribute("href", "#/activity/2");
+});

@@ -1,5 +1,7 @@
 // Activity log page (CHUD-38, charter 2.3 g.ii and g.iii): everything that happened to the records,
 // newest first, with filters for action type and entity. AI use: written with help from Claude (Anthropic).
+// The organizationId prop (open the log already filtered to one entity, CHUD-57) was added with help from
+// Claude Code (Opus 5.5) (AI assistant). Reviewed and tested by Rachel.
 import { useEffect, useState } from "react";
 import { ACTIONS, PAGE_SIZE, fetchActivity, recordLink } from "../lib/activityApi";
 import type { Action, ActivityEntry, ActivityFilters } from "../lib/activityApi";
@@ -35,8 +37,10 @@ function Who({ entry }: { entry: ActivityEntry }) {
   return <span>{entry.actor_name ?? "Unknown user"}</span>;
 }
 
-export default function ActivityLog() {
-  const [filters, setFilters] = useState<ActivityFilters>({ action: "", organizationId: "" });
+type Props = { organizationId?: string }; // start filtered to this entity (the record page links here)
+
+export default function ActivityLog({ organizationId = "" }: Props) {
+  const [filters, setFilters] = useState<ActivityFilters>({ action: "", organizationId });
   const [entities, setEntities] = useState<{ id: number; name: string }[]>([]);
   const [status, setStatus] = useState<"loading" | "error" | "ready">("loading");
   const [entries, setEntries] = useState<ActivityEntry[]>([]);

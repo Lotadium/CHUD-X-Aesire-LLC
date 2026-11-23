@@ -9,7 +9,7 @@
 import * as fakeApi from "./fakeApi";
 import * as realApi from "./realApi";
 
-export type { Organization, Contact, Flag, RecordDates, WebsiteSource, WebsiteStatusValue, UpdateOptions } from "./fakeApi";
+export type { Organization, Contact, Flag, RecordDates, WebsiteSource, WebsiteStatusValue, UpdateOptions, RecordVersion, HistoryChange } from "./fakeApi";
 
 const useReal = import.meta.env.VITE_USE_REAL_API === "true";
 const api = useReal ? realApi : fakeApi;
@@ -23,3 +23,4 @@ export const getContact = api.getContact;
 export const updateContact = api.updateContact;
 export const setContactFlag = api.setContactFlag;
 export const listContactsForOrganization = api.listContactsForOrganization;
+export const getOrganizationHistory = api.getOrganizationHistory; // record history panel (CHUD-57)
