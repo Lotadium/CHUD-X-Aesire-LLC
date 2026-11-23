@@ -146,3 +146,16 @@ test("shows how many records got new details, and handles a run with no records"
   step({ ...progress(50, 50), updated: 5 });
   expect(await screen.findByText(/50 of 50 records were verified, 5 with new details saved/)).toBeInTheDocument();
 });
+
+test("links to the full results of the run that just finished, and to the last run's results (CHUD-56)", async () => {
+  const user = userEvent.setup();
+  render(<RefreshPage />);
+  expect(screen.getByRole("link", { name: "See the last refresh’s results" })).toHaveAttribute("href", "#/refresh/latest");
+
+  await user.click(screen.getByRole("button", { name: "Refresh" }));
+  await screen.findByText("Refreshing your records…");
+  step(progress(50, 50));
+  await user.click(await screen.findByRole("button", { name: "Done" }));
+
+  expect(screen.getByRole("link", { name: "View full results" })).toHaveAttribute("href", "#/refresh/run-1");
+});
