@@ -115,9 +115,9 @@ export async function setOrganizationFlag(id: string, flagged: boolean, reason =
 }
 
 // Options for the contact form's "Organization" dropdown: just id + name
-export async function listOrganizations(): Promise<{ id: string; name: string }[]> {
+export async function listOrganizations(): Promise<{ id: string; name: string; domainId: string }[]> {
   await delay();
-  return organizations.map((o) => ({ id: o.id, name: o.name }));
+  return organizations.map((o) => ({ id: o.id, name: o.name, domainId: o.domainId }));
 }
 
 // ---------- Contacts ----------
