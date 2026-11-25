@@ -84,7 +84,7 @@ After Rachel's review, Claude Code also changed the real `listContactsForOrganiz
 contacts and use the position held at that organization, and wrote `realApi.contacts.test.ts`.
 I reviewed, ran, and tested all of it.
 
-On CHUD-57 (record history panel), I (Rachel) used two assistants. Cline with Gemini (MODEL) wrote the real
+On CHUD-57 (record history panel), I (Rachel) used two assistants. Cline with Gemini (3.5 Flash) wrote the real
 `getOrganizationHistory` in `realApi.ts` and its test in `realApi.test.ts`. Claude Code (Opus 5.5) wrote everything
 else: `RecordHistory.tsx`, `lib/recordHistory.ts`, `getOrganizationHistory` in `fakeApi.ts` and `api.ts`, the
 `#/activity/<id>` route in `App.tsx`, the `organizationId` prop on `ActivityLog.tsx`, and the tests
