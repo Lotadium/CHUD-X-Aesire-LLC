@@ -158,9 +158,9 @@ export async function setOrganizationFlag(id: string, flagged: boolean, reason =
   return toOrganization(await sendFlag<ApiOrganization>(`/organizations/${id}`, flagged, reason));
 }
 
-export async function listOrganizations(): Promise<{ id: string; name: string }[]> {
+export async function listOrganizations(): Promise<{ id: string; name: string; domainId: string }[]> {
   const res = await request<{ data: ApiOrganization[] }>("/organizations?limit=200");
-  return res.data.map((o) => ({ id: String(o.organization_id), name: o.name }));
+  return res.data.map((o) => ({ id: String(o.organization_id), name: o.name, domainId: String(o.domain_id) }));
 }
 
 // ---------- contacts (person + first position + first email) ----------

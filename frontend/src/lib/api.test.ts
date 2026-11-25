@@ -1,6 +1,6 @@
 import { test, expect } from "vitest";
 import * as api from "./api";
-import { getOrganization, updateOrganization, setOrganizationFlag, listOrganizations, getContact, updateContact, setContactFlag, listContactsForOrganization } from "./api";
+import { getOrganization, updateOrganization, setOrganizationFlag, listOrganizations, getContact, updateContact, setContactFlag, listContactsForOrganization, searchContacts } from "./api";
 
 // ---------- Organizations ----------
 
@@ -40,6 +40,18 @@ test("lists contacts for an organization", async () => {
   const contacts = await listContactsForOrganization("1");
   expect(contacts.length).toBeGreaterThan(0);
   expect(contacts[0].lastName).toBe("Lopez");
+});
+
+test("searches fake contacts using combined filters", async () => {
+  const contacts = await searchContacts({
+    query: "Dana",
+    title: "Board Clerk",
+    fieldOfWork: "Fire",
+    organization: "Sacramento Metro Fire",
+  });
+
+  expect(contacts).toHaveLength(1);
+  expect(contacts[0].email).toBe("dlopez@metrofire.ca.gov");
 });
 
 test("updates a contact", async () => {
