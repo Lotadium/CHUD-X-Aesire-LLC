@@ -86,6 +86,16 @@ After Rachel's review, Claude Code also changed the real `listContactsForOrganiz
 contacts and use the position held at that organization, and wrote `realApi.contacts.test.ts`.
 I reviewed, ran, and tested all of it.
 
+On CHUD-66 (Home page), Claude Code (Sonnet 5.5) wrote `HomePage.tsx`, `HomePage.test.tsx` and the small
+changes to `App.tsx` and `AppShell.tsx`. I reviewed, ran, and tested it.
+
+## Home page (CHUD-66)
+
+The app opens on the Home page (`#/home`, or no address at all), from the Figma "Screen 1": a card for each
+main action. **Refresh** opens the Refresh page. **New Record** and **Reports** say "Coming soon" until those
+screens are built (they will link here then). The **Home** tab in the black top bar opens it and is
+highlighted. The records list is still at `#/records`.
+
 ## Record page (CHUD-64)
 
 `#/records/<id>` opens one organization (click an entity name in the records list, or the **Record page**
