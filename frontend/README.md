@@ -47,16 +47,18 @@ frontend/src/
     ConfirmDialog.tsx          reusable "are you sure?" dialog (styled like the mockup pop-ups)
     FlagReasonField.tsx        required reason box in the flag dialog
     FormField.tsx              label + input/dropdown + inline error
-    AppShell.tsx               black top bar from the Figma mockups (tabs are placeholders)
+    AppShell.tsx               black top bar from the Figma mockups (Refresh links to #/refresh; other tabs are placeholders until CHUD-54)
     ui.tsx                     page header, card, buttons, saved pill, error banner
   lib/
     validation.ts              Zod rules for organizations and contacts
     api.ts                     picks fakeApi or realApi
     fakeApi.ts                 in-memory sample data
     realApi.ts                 calls the backend; converts field names, ids, URLs
-    refreshApi.ts              starts a refresh and runs it batch by batch (fake or real) CHUD-33
+    refreshApi.ts              starts a refresh and runs it batch by batch (fake or real) CHUD-33;
+                               reads a run's results and past runs                      CHUD-56
   pages/
     RefreshPage.tsx            Refresh page: button, progress bar, result pop-ups CHUD-33
+    RefreshResultsPage.tsx     refresh results: counts, unverified records, fix by hand  CHUD-56
 ```
 
 ## AI assistance
@@ -152,3 +154,34 @@ set in `.env.local`, the same switch as the rest of the app.
 
 On CHUD-33, Claude Opus 5.5 wrote the Refresh page, the result pop-up, the refresh API client with its
 fake run, and the tests, and checked the page end to end against the CHUD-35 backend on a local database.
+
+## Refresh results (CHUD-56)
+
+After a refresh, staff see what it found and fix the records it couldn't verify (Charter 2.3 c).
+The **Refresh** tab in the black top bar opens the Refresh page and is underlined on it and on the results.
+Open the results with **View full results** on the finished Refresh card, or **See the last refresh's results**
+before starting one. Addresses: `#/refresh/<run id>`, or `#/refresh/latest` for the most recent run.
+
+- **Counts:** records checked, verified, updated and couldn't be verified, taken as is from the API's
+  run summary, so they always match what the backend recorded. A run that didn't finish says how far it got.
+- **Records that need attention:** each one with its reason (the short label and the backend's full
+  reason), and "Some new details were still saved" when `changed` is true. A **Reason** filter appears
+  when there is more than one reason.
+- **Fixing a record:** **Open record** goes to the record page (CHUD-64), **Update by hand** to the
+  entity form. After a fix, **Check again** refreshes just that record; it turns to "Verified now" or
+  says why it still can't be verified.
+- **Recent refreshes:** the last 5 runs with their counts, each linking to its results.
+
+| Method | Path | Used for |
+|---|---|---|
+| GET | `/api/refresh/:id` | The run's counts and unverified records (does no work) |
+| GET | `/api/refresh?limit=5` | Recent refreshes, and the newest one for `#/refresh/latest` |
+| POST | `/api/refresh` with `{ "organization_ids": [id] }`, then `/process` | **Check again** for one record |
+
+The fake API starts with one finished 50-record run, so the screen has something to show before anyone
+runs a refresh. Its unverified records use ids that aren't in the fake records, so **Open record** only
+shows real records when `VITE_USE_REAL_API=true`.
+
+On CHUD-56, Claude Opus 5.5 wrote the results page, the new functions in `refreshApi.ts` with their fake
+versions, the links on the Refresh page, the top bar's Refresh link, the `App.tsx` route and the tests, and checked the screen end to end
+against the CHUD-35 backend on a local database (refresh, update a record by hand, check it again).
