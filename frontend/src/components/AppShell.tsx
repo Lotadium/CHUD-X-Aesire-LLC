@@ -13,6 +13,7 @@ const icons: Record<string, ReactNode> = {
 
 // Where each tab goes. A tab without one is still a placeholder.
 const links: Record<string, string> = {
+  Home: "#/home",
   Refresh: "#/refresh",
 };
 
