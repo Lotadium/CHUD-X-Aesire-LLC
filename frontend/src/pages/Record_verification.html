@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review records</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --text: #1c2330; --muted: #5d6778; --border: #dde1e8;
+    --accent: #2457d6; --accent-soft: #e8eefc; --danger: #b3261e; --ok: #1b7f4b;
+    --warn-bg: #fff1dc; --warn: #8a5300; --bad-bg: #fde8e6; --info-bg: #e6f1fb; --info: #1d5f99;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14171c; --card: #1c2027; --text: #e8ebf0; --muted: #98a2b3; --border: #2e343e;
+            --accent: #7ea2ff; --accent-soft: #232d47; --danger: #ff8a80; --ok: #6fd6a0;
+            --warn-bg: #3a2c14; --warn: #ffc26b; --bad-bg: #3d2220; --info-bg: #1c2f42; --info: #8cc4f5; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  h1 { font-size: 22px; margin: 0; }
+  .count { background: var(--accent-soft); color: var(--accent); font-weight: 600;
+           padding: 2px 10px; border-radius: 999px; font-size: 14px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 720px) { .layout { grid-template-columns: 1fr; } }
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .panel h2 { font-size: 15px; margin: 0 0 12px; }
+  ul.records { list-style: none; margin: 0; padding: 0; }
+  .rec { display: block; width: 100%; text-align: left; background: none; color: inherit; font: inherit;
+         font-weight: 400; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+         margin-bottom: 8px; cursor: pointer; transition: opacity .25s, transform .25s; }
+  .rec:hover { border-color: var(--accent); }
+  .rec[aria-current=true] { border-color: var(--accent); background: var(--accent-soft); }
+  .rec.leaving { opacity: 0; transform: translateX(16px); }
+  .rec .top { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+  .rec .name { font-weight: 600; overflow-wrap: anywhere; }
+  .rec .meta { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .badge { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+  .b-no_website { background: var(--warn-bg); color: var(--warn); }
+  .b-site_unreachable { background: var(--bad-bg); color: var(--danger); }
+  .b-no_contact_name { background: var(--info-bg); color: var(--info); }
+  .b-contact_not_found { background: var(--accent-soft); color: var(--accent); }
+  .more { background: none; border: 1px dashed var(--border); color: var(--accent); width: 100%; }
+  label.f { display: block; font-weight: 600; margin-bottom: 12px; }
+  input[type=text] { display: block; width: 100%; margin-top: 6px; padding: 8px 10px; font: inherit; font-weight: 400;
+         border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); }
+  input[aria-invalid=true] { border-color: var(--danger); }
+  .err { color: var(--danger); font-size: 13px; font-weight: 400; margin-top: 4px; }
+  .actions { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+  button.primary { font: inherit; font-weight: 600; padding: 8px 18px; border-radius: 6px; border: 0;
+           background: var(--accent); color: #fff; cursor: pointer; }
+  @media (prefers-color-scheme: dark) { button.primary { color: #0e1320; } }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .status { font-size: 13px; color: var(--muted); }
+  .status.bad { color: var(--danger); }
+  .hint { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+  .empty, .banner { text-align: center; padding: 40px 16px; border: 1px dashed var(--border);
+          border-radius: 10px; color: var(--muted); }
+  .empty strong { display: block; color: var(--ok); font-size: 18px; margin-bottom: 4px; }
+  .banner { border-style: solid; color: var(--danger); padding: 16px; margin-bottom: 14px; text-align: left; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Review records</h1>
+    <span class="count" id="count" aria-live="polite">…</span>
+  </header>
+  <p class="sub">The refresh couldn't verify these records. Select one, correct the Domain and Entity's name, then search again.</p>
+  <div id="error" class="banner hidden" role="alert"></div>
+
+  <div class="layout" id="layout">
+    <section class="panel" aria-labelledby="listTitle">
+      <h2 id="listTitle"><span id="listHeading">Records need attention</span></h2>
+      <ul class="records" id="list"></ul>
+    </section>
+
+    <section class="panel" id="editor" aria-labelledby="edTitle">
+      <h2 id="edTitle">Fix record</h2>
+      <p class="hint" id="edHint">Select a record from the list.</p>
+      <form id="form" class="hidden" novalidate>
+        <label class="f">Domain
+          <input type="text" id="domain" inputmode="url" placeholder="example.com" autocomplete="off">
+          <div class="err" id="domainErr"></div>
+        </label>
+        <label class="f">Entity's name
+          <input type="text" id="entity" placeholder="Name as it should appear" autocomplete="off">
+          <div class="err" id="entityErr"></div>
+        </label>
+        <div class="actions">
+          <button class="primary" id="submit" type="submit">Search + Update</button>
+          <span class="status" id="status" role="status"></span>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <div id="empty" class="empty hidden">
+    <strong>All caught up</strong>
+    No records need attention right now.
+  </div>
+</main>
+
+<script>
+
+const USE_MOCK = true;
+const API_BASE = "";
+const LIST_URL = `${API_BASE}/api/records?flagged=true`;                              // assumed
+const RECHECK_URL = (id) => `${API_BASE}/api/records/${encodeURIComponent(id)}/recheck`; // assumed
+
+/* List response (assumed):
+   [{ id, entityName, domain, flag: { reason, lastCheckedAt } }]
+   reason: "no_website" | "site_unreachable" | "no_contact_name" | "contact_not_found"
+   Recheck request:  POST { domain, entityName }
+   Recheck response: { verified: true }  |  { verified: false, reason, lastCheckedAt }
+   On every recheck the server stores lastCheckedAt + reason (feeds the "Contact not found" report, CHUD-43)
+   and clears the flag when verified. */
+
+const REASONS = {
+  no_website: "No website",
+  site_unreachable: "Site unreachable",
+  no_contact_name: "No contact name",
+  contact_not_found: "Contact not found",
+};
+const daysAgo = (n) => new Date(Date.now() - n * 864e5).toISOString();
+
+const MOCK = [
+  { id: "r-1", entityName: "PLACEHOLDER", domain: "", flag: { reason: "no_website", lastCheckedAt: daysAgo(0) } },
+  { id: "r-2", entityName: "PLACEHOLDER", domain: "delgadopark-down.law", flag: { reason: "site_unreachable", lastCheckedAt: daysAgo(0) } },
+  { id: "r-3", entityName: "", domain: "northwindgarden.org", flag: { reason: "no_contact_name", lastCheckedAt: daysAgo(0) } },
+  { id: "r-4", entityName: "PLACEHOLDER", domain: "cedarclinic.com", flag: { reason: "contact_not_found", lastCheckedAt: daysAgo(0) } },
+  { id: "r-5", entityName: "PLACEHOLDER", domain: "", flag: { reason: "no_website", lastCheckedAt: daysAgo(1) } },
+  { id: "r-6", entityName: "PLACEHOLDER", domain: "pikerowe-down.com", flag: { reason: "site_unreachable", lastCheckedAt: daysAgo(1) } },
+  { id: "r-7", entityName: "PLACEHOLDER", domain: "summitroofing.net", flag: { reason: "contact_not_found", lastCheckedAt: daysAgo(1) } },
+];
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const api = {
+  async list() {
+    if (USE_MOCK) { await sleep(300); return structuredClone(MOCK); }
+    const r = await fetch(LIST_URL, { headers: { Accept: "application/json" } });
+    if (!r.ok) throw new Error(`Could not load records (${r.status})`);
+    return r.json();
+  },
+  async recheck(id, domain, entityName) {
+    if (USE_MOCK) {                       // mock rules so every state can be demoed
+      await sleep(600);
+      const now = new Date().toISOString();
+      if (domain.includes("down")) return { verified: false, reason: "site_unreachable", lastCheckedAt: now };
+      if (/unknown/i.test(entityName)) return { verified: false, reason: "contact_not_found", lastCheckedAt: now };
+      return { verified: true };
+    }
+    const r = await fetch(RECHECK_URL(id), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ domain, entityName }),
+    });
+    if (!r.ok) throw new Error(`Search failed (${r.status})`);
+    return r.json();
+  },
+};
+
+const $ = (s) => document.querySelector(s);
+const PREVIEW = 4;
+let records = [], selectedId = null, expanded = false;
+
+const fmtDate = (iso) => new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+function renderCount() {
+  const n = records.length;
+  $("#count").textContent = n === 1 ? "1 record needs attention" : `${n} records need attention`;
+  $("#listHeading").textContent = $("#count").textContent;
+  $("#layout").classList.toggle("hidden", n === 0);
+  $("#empty").classList.toggle("hidden", n !== 0);
+}
+
+function renderList() {
+  const ul = $("#list");
+  ul.replaceChildren();
+  const shown = expanded ? records : records.slice(0, PREVIEW);
+  shown.forEach((r) => {
+    const li = document.createElement("li");
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "rec"; b.dataset.id = r.id;
+    b.setAttribute("aria-current", String(r.id === selectedId));
+    const top = document.createElement("div"); top.className = "top";
+    const name = document.createElement("span"); name.className = "name";
+    name.textContent = r.entityName || "(no name)";
+    const badge = document.createElement("span");
+    badge.className = `badge b-${r.flag.reason}`; badge.textContent = REASONS[r.flag.reason];
+    top.append(name, badge);
+    const meta = document.createElement("div"); meta.className = "meta";
+    meta.textContent = `${r.domain || "no domain"} · checked ${fmtDate(r.flag.lastCheckedAt)}`;
+    b.append(top, meta);
+    b.addEventListener("click", () => select(r.id));
+    li.append(b); ul.append(li);
+  });
+  const hidden = records.length - shown.length;
+  if (hidden > 0) {
+    const li = document.createElement("li");
+    const m = document.createElement("button");
+    m.type = "button"; m.className = "rec more";
+    m.textContent = `+ ${hidden} more record${hidden === 1 ? "" : "s"}`;
+    m.addEventListener("click", () => { expanded = true; renderList(); });
+    li.append(m); ul.append(li);
+  }
+}
+
+function clearErrors() {
+  ["domain", "entity"].forEach((k) => { $("#" + k + "Err").textContent = ""; $("#" + k).removeAttribute("aria-invalid"); });
+}
+
+function select(id) {
+  selectedId = id;
+  const r = records.find((x) => x.id === id);
+  renderList();
+  if (!r) { $("#form").classList.add("hidden"); $("#edHint").classList.remove("hidden"); return; }
+  $("#edHint").classList.add("hidden");
+  $("#form").classList.remove("hidden");
+  $("#domain").value = r.domain || "";
+  $("#entity").value = r.entityName || "";
+  $("#status").textContent = ""; $("#status").className = "status";
+  clearErrors();
+}
+
+function validate() {
+  clearErrors();
+  let ok = true;
+  [["domain", "#domain"], ["entity", "#entity"]].forEach(([k, sel]) => {
+    if (!$(sel).value.trim()) {
+      $("#" + k + "Err").textContent = "Required to verify this record";
+      $(sel).setAttribute("aria-invalid", "true"); ok = false;
+    }
+  });
+  return ok;
+}
+
+$("#form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!validate()) return;
+  const r = records.find((x) => x.id === selectedId);
+  if (!r) return;
+  const domain = $("#domain").value.trim(), entityName = $("#entity").value.trim();
+  const btn = $("#submit"), st = $("#status");
+  btn.disabled = true; st.className = "status"; st.textContent = "Searching…";
+  try {
+    const res = await api.recheck(r.id, domain, entityName);
+    r.domain = domain; r.entityName = entityName;
+    if (res.verified) {                              // flag clears, record drops off
+      const idx = records.findIndex((x) => x.id === r.id);
+      const li = $(`.rec[data-id="${r.id}"]`);
+      li?.classList.add("leaving");
+      await sleep(250);
+      records.splice(idx, 1);
+      const next = records[idx] || records[idx - 1];
+      renderCount();
+      select(next ? next.id : null);
+      if (!next) $("#form").classList.add("hidden");
+    } else {                                         // still unverified: new reason + date stored
+      r.flag = { reason: res.reason, lastCheckedAt: res.lastCheckedAt };
+      renderList();
+      st.className = "status bad";
+      st.textContent = `Still not verified: ${REASONS[res.reason]}. Adjust the fields and try again.`;
+    }
+  } catch (err) {
+    st.className = "status bad"; st.textContent = err.message || "Search failed. Try again.";
+  } finally { btn.disabled = false; }
+});
+
+["#domain", "#entity"].forEach((sel) =>
+  $(sel).addEventListener("input", () => {
+    const k = sel.slice(1);
+    $("#" + k + "Err").textContent = ""; $(sel).removeAttribute("aria-invalid");
+  }));
+
+(async function init() {
+  try {
+    records = await api.list();
+    renderCount(); renderList();
+  } catch (e) {
+    $("#count").textContent = "–";
+    $("#error").textContent = e.message || "Could not load records.";
+    $("#error").classList.remove("hidden");
+  }
+})();
+</script>
+</body>
+</html>
