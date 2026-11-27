@@ -5,6 +5,7 @@
 import type { z } from "zod";
 import { organizationSchema, contactSchema } from "./validation";
 import { sameWebsite } from "./website";
+import { sampleContacts, sampleDomains, sampleOrganizations } from "./fakeData";
 
 // Wait a little, like a real network request would
 const delay = () => new Promise((resolve) => setTimeout(resolve, 300));
@@ -43,22 +44,11 @@ export type UpdateOptions = { confirmOverwrite?: boolean };
 // The shape of an organization: the form fields plus an id, its flag, where its website came from, and its dates
 export type Organization = z.infer<typeof organizationSchema> & { id: string } & Flag & WebsiteInfo & RecordDates;
 
-// Pretend database (resets every time the page reloads)
-const organizations: Organization[] = [
-  { id: "1", name: "Sacramento Metro Fire", domainId: "1", websiteUrl: "https://metrofire.ca.gov/", flagged: false, flagReason: "",
-    websiteSource: "auto", websiteUpdatedAt: "2026-10-20T19:00:00Z", websiteStatus: "FOUND", websiteSuggestions: 0,
-    createdAt: "2026-10-05T16:30:00Z", updatedAt: "2026-10-20T19:00:00Z", verifiedAt: "2026-10-28T17:15:00Z" },
-  { id: "2", name: "Folsom Water District", domainId: "2", websiteUrl: "", flagged: false, flagReason: "",
-    websiteSource: "", websiteUpdatedAt: "", websiteStatus: "NOT_SEARCHED", websiteSuggestions: 0,
-    createdAt: "2026-10-05T16:30:00Z", updatedAt: "2026-10-05T16:30:00Z", verifiedAt: "2026-10-05T16:30:00Z" },
-];
+// Pretend database (resets every time the page reloads). The sample data lives in fakeData.ts.
+const organizations: Organization[] = structuredClone(sampleOrganizations);
 
 // Options for the "Domain" dropdown (Ryan's domain table)
-const domains = [
-  { id: "1", name: "Fire" },
-  { id: "2", name: "Water" },
-  { id: "3", name: "EMS" },
-];
+const domains = structuredClone(sampleDomains);
 
 export async function listDomains(): Promise<{ id: string; name: string }[]> {
   await delay();
@@ -125,15 +115,8 @@ export async function listOrganizations(): Promise<{ id: string; name: string }[
 // The shape of a contact: the form fields plus an id and its flag
 export type Contact = z.infer<typeof contactSchema> & { id: string } & Flag;
 
-// Pretend database. organizationId "1" = Sacramento Metro Fire, "2" = Folsom Water District
-const contacts: Contact[] = [
-  { id: "1", firstName: "Dana", middleName: "", lastName: "Lopez", organizationId: "1", title: "Board Clerk",
-    phone: "(916) 859-4300", phoneExt: "12", mobilePhone: "", email: "dlopez@metrofire.ca.gov",
-    flagged: false, flagReason: "" },
-  { id: "2", firstName: "Marcus", middleName: "J", lastName: "Reed", organizationId: "2", title: "General Manager",
-    phone: "(916) 555-0142", phoneExt: "", mobilePhone: "(916) 555-0199", email: "",
-    flagged: false, flagReason: "" },
-];
+// Pretend database. organizationId points at an organization above (the sample data is in fakeData.ts)
+const contacts: Contact[] = structuredClone(sampleContacts);
 
 export async function getContact(id: string): Promise<Contact> {
   await delay();

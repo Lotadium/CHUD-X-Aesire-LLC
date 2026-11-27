@@ -14,6 +14,10 @@ npm test           # unit and component tests
 ## Fake data or the real API
 
 By default the app uses **fake in-memory data** (`src/lib/fakeApi.ts`), so it runs with no backend.
+The sample records (14 organizations and 19 contacts, all made up) are in `src/lib/fakeData.ts`; try
+`#/records/1` to `#/records/14`. They cover the demo cases: no website found, website suggestions waiting for
+review, a flagged organization and contact, contacts with no email or phone, and an organization with no
+contacts. Changes made while the app runs are lost when the page reloads.
 
 To use the real API from [`../backend`](../backend/README.md):
 
@@ -85,6 +89,9 @@ and `RecordsList.tsx`, after Cline's first version of the page did not compile a
 After Rachel's review, Claude Code also changed the real `listContactsForOrganization` to load every page of
 contacts and use the position held at that organization, and wrote `realApi.contacts.test.ts`.
 I reviewed, ran, and tested all of it.
+
+On CHUD-58 (demo rehearsal), Claude Code (Sonnet 5.5) wrote the sample data in `fakeData.ts`, its test
+`fakeData.test.ts`, and moved the sample records out of `fakeApi.ts`. I reviewed, ran, and tested it.
 
 ## Record page (CHUD-64)
 
