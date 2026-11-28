@@ -39,6 +39,8 @@ new screens so everything matches.
 
 ```
 frontend/src/
+  App.tsx                      shows the screen for the current address
+  screens.tsx                  every screen and its address (add new screens here) CHUD-54
   components/
     OrganizationEditForm.tsx   edit + flag an organization (entity)     CHUD-15
     WebsiteStatus.tsx          saved website: link, source, last updated CHUD-31
@@ -47,7 +49,7 @@ frontend/src/
     ConfirmDialog.tsx          reusable "are you sure?" dialog (styled like the mockup pop-ups)
     FlagReasonField.tsx        required reason box in the flag dialog
     FormField.tsx              label + input/dropdown + inline error
-    AppShell.tsx               black top bar from the Figma mockups (tabs are placeholders)
+    AppShell.tsx               black top bar from the Figma mockups, with the navigation menu CHUD-54
     ui.tsx                     page header, card, buttons, saved pill, error banner
   lib/
     validation.ts              Zod rules for organizations and contacts
@@ -57,6 +59,23 @@ frontend/src/
     refreshApi.ts              starts a refresh and runs it batch by batch (fake or real) CHUD-33
   pages/
     RefreshPage.tsx            Refresh page: button, progress bar, result pop-ups CHUD-33
+    ComingSoon.tsx             stands in for a menu screen that is not built yet CHUD-54
+```
+
+## Navigation (CHUD-54)
+
+The menu in the top bar opens Records (`#/records`), Search (`#/search`), Review (`#/review`), Refresh
+(`#/refresh`) and Activity log (`#/activity`). The current screen is highlighted, and the browser's back and
+forward buttons work. Search and Review show a "not built yet" page until their screens exist. An empty or
+unknown address opens Records.
+
+To add a screen, add one line to `screens` in `src/screens.tsx` (plus its import):
+
+```tsx
+// In the menu: a name and an icon (an SVG path on a 16 x 16 grid)
+{ path: "reports", label: "Reports", icon: "M2.5 13.5h11M4.5 11V8M8 11V4.5M11.5 11V6.5", render: () => <Reports /> },
+// Opened from another screen: `under` is the menu item to highlight
+{ path: "reports/:id", under: "Reports", render: (id) => <ReportPage id={id} /> },
 ```
 
 ## AI assistance
@@ -84,10 +103,13 @@ After Rachel's review, Claude Code also changed the real `listContactsForOrganiz
 contacts and use the position held at that organization, and wrote `realApi.contacts.test.ts`.
 I reviewed, ran, and tested all of it.
 
+On CHUD-54 (navigation menu), I (Ryan Griffiths) used Claude Code (Opus 5.5). It wrote `screens.tsx`,
+`ComingSoon.tsx`, `App.test.tsx` and `AppShell.test.tsx`, and the menu changes to `App.tsx`, `AppShell.tsx` and
+`RecordPage.test.tsx`.
+
 ## Record page (CHUD-64)
 
-`#/records/<id>` opens one organization (click an entity name in the records list, or the **Record page**
-tab). It is read-only:
+`#/records/<id>` opens one organization (click an entity name in the records list). It is read-only:
 
 - the organization's name, domain, website (same box as the entity page) and when it was last updated
   and last verified, with a **Verified** pill (or **Flagged as no longer valid**)

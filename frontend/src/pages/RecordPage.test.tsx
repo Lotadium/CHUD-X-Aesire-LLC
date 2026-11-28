@@ -65,5 +65,5 @@ test("is reachable from the app at #/records/<id>", async () => {
   window.location.hash = "#/records/2";
   render(<App />);
   expect(await screen.findByRole("heading", { name: "Folsom Water District" })).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "Record page" })).toHaveAttribute("aria-current", "page");
+  expect(screen.getByRole("link", { name: "Records" })).toHaveAttribute("aria-current", "page");
 });
