@@ -192,9 +192,15 @@ function RefreshCard({ state, onStart, onResume }: { state: State; onStart: () =
   if (state.status === "idle") {
     return (
       <Card title="Refresh your records" subtitle="Click Refresh to re-check every record and automatically fill in any missing information. This may take a moment.">
-        <Button type="button" onClick={onStart}>
-          Refresh
-        </Button>
+        <div className="flex flex-wrap items-center gap-4">
+          <Button type="button" onClick={onStart}>
+            Refresh
+          </Button>
+          {/* CHUD-56 */}
+          <a href="#/refresh/latest" className="text-sm font-medium text-brand-strong underline-offset-2 hover:underline">
+            See the last refresh’s results
+          </a>
+        </div>
       </Card>
     );
   }
@@ -255,6 +261,13 @@ function RefreshCard({ state, onStart, onResume }: { state: State; onStart: () =
       }
     >
       <ProgressBar progress={progress} />
+      {/* CHUD-56: the full counts and every unverified record, with links to fix them */}
+      <a
+        href={`#/refresh/${encodeURIComponent(progress.run_id)}`}
+        className="mt-4 inline-flex h-10 items-center rounded-lg bg-brand px-5 text-sm font-semibold text-ink hover:bg-brand-hover"
+      >
+        View full results
+      </a>
     </Card>
   );
 }
