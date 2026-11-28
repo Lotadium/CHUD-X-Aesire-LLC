@@ -14,7 +14,7 @@ type View = "records" | "record" | "refresh" | "refreshResults" | "entity" | "co
 
 // Which screen to show comes from the address bar, so a link like #/entity/5 opens entity 5
 // (the activity log links each entry to its record this way, CHUD-38).
-//   #/records   #/records/<id>   #/refresh   #/activity   #/entity/<id>   #/contact/<id>
+//   #/records   #/records/<id>   #/refresh   #/refresh/<run id or "latest">   #/activity   #/activity/<id>   #/entity/<id>   #/contact/<id>
 function readHash(): { view: View; id: string } {
   const [, view, id] = window.location.hash.split("/");
   if (view === "records" && id) return { view: "record", id }; // the record page (CHUD-64)
