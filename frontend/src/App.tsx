@@ -1,6 +1,8 @@
 // Written with help from Claude Code (Opus 5.5) (AI assistant). Reviewed and tested by Ryan Griffiths. See frontend/README.md → "AI assistance".
 //
 // (CHUD-54): The navigation menu
+// #/activity/<id> (the activity log filtered to one record) was added for the history panel (CHUD-57)
+// with help from Claude Code (Opus 5.5) (AI assistant). Reviewed and tested by Rachel.
 import { Fragment, useEffect, useState } from "react";
 import AppShell from "./components/AppShell";
 import { findScreen } from "./screens";

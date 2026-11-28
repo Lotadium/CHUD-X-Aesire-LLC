@@ -1,11 +1,12 @@
 // Written with help from Claude Code (Opus 5.5) (AI assistant). Reviewed and tested by Ryan Griffiths. See frontend/README.md → "AI assistance".
-// 
+//
 // (CHUD-54):The navigation menu
 import type { ReactNode } from "react";
 import { menu } from "../screens";
 
 // The black top bar from the Figma mockups: Aesire badge, app name, and the main menu.
-// The menu items come from screens.tsx.
+// The menu items come from screens.tsx. The Refresh item also stays highlighted on the
+// refresh results (CHUD-56).
 
 type Props = {
   children: ReactNode;

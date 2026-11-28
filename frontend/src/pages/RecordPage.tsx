@@ -1,4 +1,5 @@
 // Written with help from Claude Code (Sonnet 5.5) (AI assistant). Reviewed and tested by Irene Riva. See frontend/README.md → "AI assistance".
+// The Record history panel (CHUD-57) was added with help from Claude Code (Opus 5.5) (AI assistant). Reviewed and tested by Rachel.
 //
 // Record page (CHUD-64): one organization, opened from a search result or the records list (#/records/<id>).
 // Read-only: it shows the organization, its website, its contacts and its verified status. Editing
@@ -8,6 +9,7 @@ import { getOrganization, listContactsForOrganization, listDomains } from "../li
 import type { Contact, Organization } from "../lib/api";
 import { nextRefreshBatch, startRefresh } from "../lib/refreshApi";
 import WebsiteStatus, { formatDate } from "../components/WebsiteStatus";
+import RecordHistory from "../components/RecordHistory";
 import { Button, Card, ErrorBanner, FlagIcon, PageHeader, SavedPill } from "../components/ui";
 
 // Charter 2.3 e.v: a blank value reads "Not Found", never an empty cell
@@ -26,7 +28,7 @@ const MAX_BATCHES = 20;
 export default function RecordPage({ id }: { id: string }) {
   const [org, setOrg] = useState<Organization | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
-  const [domainName, setDomainName] = useState("");
+  const [domains, setDomains] = useState<{ id: string; name: string }[]>([]);
   const [loadError, setLoadError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState<RefreshMessage | null>(null);
@@ -35,7 +37,7 @@ export default function RecordPage({ id }: { id: string }) {
     const [organization, domains, people] = await Promise.all([getOrganization(id), listDomains(), listContactsForOrganization(id)]);
     setOrg(organization);
     setContacts(people);
-    setDomainName(domains.find((d) => d.id === organization.domainId)?.name ?? "");
+    setDomains(domains);
   }
 
   useEffect(() => {
@@ -70,6 +72,8 @@ export default function RecordPage({ id }: { id: string }) {
       setRefreshing(false);
     }
   }
+
+  const domainName = domains.find((d) => d.id === org?.domainId)?.name ?? "";
 
   if (loadError) {
     return (
@@ -178,10 +182,8 @@ export default function RecordPage({ id }: { id: string }) {
         )}
       </Card>
 
-      {/* Place for the history panel (CHUD-57, Rachel): earlier versions and a link to the activity log */}
-      <Card title="Record history" subtitle="Earlier versions of this record and its activity log.">
-        <p className="text-sm text-muted">The history panel will appear here.</p>
-      </Card>
+      {/* History panel (CHUD-57): earlier versions and a link to the activity log */}
+      <RecordHistory organizationId={id} updatedAt={org.updatedAt} domains={domains} />
     </div>
   );
 }

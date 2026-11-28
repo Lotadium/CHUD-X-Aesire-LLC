@@ -10,6 +10,7 @@ import ComingSoon from "./pages/ComingSoon";
 import RecordPage from "./pages/RecordPage";
 import RecordsList from "./pages/RecordsList";
 import RefreshPage from "./pages/RefreshPage";
+import RefreshResultsPage from "./pages/RefreshResultsPage";
 
 type Screen = {
   path: string; // the address after "#/". ":id" stands for a record's id
@@ -30,6 +31,8 @@ const screens: Screen[] = [
   { path: "entity/:id", under: "Records", render: (id) => <OrganizationEditForm id={id} /> },
   { path: "contact/:id", under: "Records", render: (id) => <ContactEditForm id={id} /> },
   { path: "review/website/:id", under: "Review", render: () => <ComingSoon title="Review" /> },
+  { path: "refresh/:id", under: "Refresh", render: (id) => <RefreshResultsPage runId={id} /> }, // a run id or "latest" (CHUD-56)
+  { path: "activity/:id", under: "Activity log", render: (id) => <ActivityLog organizationId={id} /> }, // filtered to one entity (CHUD-57)
 ];
 
 export const menu = screens.flatMap((s) => (s.label ? [{ label: s.label, icon: s.icon, href: `#/${s.path}` }] : []));

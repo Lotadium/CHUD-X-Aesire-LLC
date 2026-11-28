@@ -56,9 +56,11 @@ frontend/src/
     api.ts                     picks fakeApi or realApi
     fakeApi.ts                 in-memory sample data
     realApi.ts                 calls the backend; converts field names, ids, URLs
-    refreshApi.ts              starts a refresh and runs it batch by batch (fake or real) CHUD-33
+    refreshApi.ts              starts a refresh and runs it batch by batch (fake or real) CHUD-33;
+                               reads a run's results and past runs                      CHUD-56
   pages/
     RefreshPage.tsx            Refresh page: button, progress bar, result pop-ups CHUD-33
+    RefreshResultsPage.tsx     refresh results: counts, unverified records, fix by hand  CHUD-56
     ComingSoon.tsx             stands in for a menu screen that is not built yet CHUD-54
 ```
 
@@ -103,9 +105,17 @@ After Rachel's review, Claude Code also changed the real `listContactsForOrganiz
 contacts and use the position held at that organization, and wrote `realApi.contacts.test.ts`.
 I reviewed, ran, and tested all of it.
 
+On CHUD-57 (record history panel), I (Rachel) used two assistants. Cline with Gemini (3.5 Flash) wrote the real
+`getOrganizationHistory` in `realApi.ts` and its test in `realApi.test.ts`. Claude Code (Opus 5.5) wrote everything
+else: `RecordHistory.tsx`, `lib/recordHistory.ts`, `getOrganizationHistory` in `fakeApi.ts` and `api.ts`, the
+`#/activity/<id>` route in `App.tsx`, the `organizationId` prop on `ActivityLog.tsx`, and the tests
+(`RecordHistory.test.tsx`, `recordHistory.test.ts`, and new tests in `RecordPage.test.tsx` and `ActivityLog.test.tsx`).
+I reviewed, ran, and tested all of it.
+
 On CHUD-54 (navigation menu), I (Ryan Griffiths) used Claude Code (Opus 5.5). It wrote `screens.tsx`,
 `ComingSoon.tsx`, `App.test.tsx` and `AppShell.test.tsx`, and the menu changes to `App.tsx`, `AppShell.tsx` and
-`RecordPage.test.tsx`.
+`RecordPage.test.tsx`. When `main` was merged in, it also moved the CHUD-56 and CHUD-57 routes into `screens.tsx` and
+combined the CHUD-56 `AppShell.test.tsx` with the CHUD-54 one.
 
 ## Record page (CHUD-64)
 
@@ -117,10 +127,27 @@ On CHUD-54 (navigation menu), I (Ryan Griffiths) used Claude Code (Opus 5.5). It
   contact form (`#/contact/<id>`)
 - **Edit** opens the entity form (`#/entity/<id>`); **Refresh** runs a refresh for just this record
   (`startRefresh([id])`, then `nextRefreshBatch` until it is done) and shows the result
-- an empty **Record history** card where the history panel goes (CHUD-57)
+- the **Record history** panel (CHUD-57, below)
 
 Contacts come from `listContactsForOrganization(orgId)` in `lib/api.ts` (fake data, or
 `GET /api/people?organization_id=<id>` with `VITE_USE_REAL_API=true`).
+
+### Record history panel (CHUD-57)
+
+The last card on the record page (`components/RecordHistory.tsx`, charter 2.3 c) shows:
+
+- when the record was **last updated**
+- every saved version, newest first (the newest is marked **Current**): the date, who changed it
+  (a username, or **Refresh** for the data refresh) and what changed ("Website: Not Found → https://…").
+  Version 1 reads "Record created"
+- **No earlier versions** when the record has only the version it was created with
+- **Open activity log for this record**, which opens `#/activity/<id>`: the activity log with the
+  Entity filter already set to this organization
+
+Versions come from `getOrganizationHistory(id)` in `lib/api.ts`: fake sample data (organization 1 has
+versions, organization 2 has none; saving the entity form adds one), or `GET /api/organizations/:id/history`
+(CHUD-36) with `VITE_USE_REAL_API=true`. The panel shows the organization's own versions; contact changes
+are on each contact's history and in the activity log. The wording of each change is in `lib/recordHistory.ts`.
 
 ## Website on the entity page (CHUD-31)
 
@@ -174,3 +201,34 @@ set in `.env.local`, the same switch as the rest of the app.
 
 On CHUD-33, Claude Opus 5.5 wrote the Refresh page, the result pop-up, the refresh API client with its
 fake run, and the tests, and checked the page end to end against the CHUD-35 backend on a local database.
+
+## Refresh results (CHUD-56)
+
+After a refresh, staff see what it found and fix the records it couldn't verify (Charter 2.3 c).
+The **Refresh** tab in the black top bar opens the Refresh page and is underlined on it and on the results.
+Open the results with **View full results** on the finished Refresh card, or **See the last refresh's results**
+before starting one. Addresses: `#/refresh/<run id>`, or `#/refresh/latest` for the most recent run.
+
+- **Counts:** records checked, verified, updated and couldn't be verified, taken as is from the API's
+  run summary, so they always match what the backend recorded. A run that didn't finish says how far it got.
+- **Records that need attention:** each one with its reason (the short label and the backend's full
+  reason), and "Some new details were still saved" when `changed` is true. A **Reason** filter appears
+  when there is more than one reason.
+- **Fixing a record:** **Open record** goes to the record page (CHUD-64), **Update by hand** to the
+  entity form. After a fix, **Check again** refreshes just that record; it turns to "Verified now" or
+  says why it still can't be verified.
+- **Recent refreshes:** the last 5 runs with their counts, each linking to its results.
+
+| Method | Path | Used for |
+|---|---|---|
+| GET | `/api/refresh/:id` | The run's counts and unverified records (does no work) |
+| GET | `/api/refresh?limit=5` | Recent refreshes, and the newest one for `#/refresh/latest` |
+| POST | `/api/refresh` with `{ "organization_ids": [id] }`, then `/process` | **Check again** for one record |
+
+The fake API starts with one finished 50-record run, so the screen has something to show before anyone
+runs a refresh. Its unverified records use ids that aren't in the fake records, so **Open record** only
+shows real records when `VITE_USE_REAL_API=true`.
+
+On CHUD-56, Claude Opus 5.5 wrote the results page, the new functions in `refreshApi.ts` with their fake
+versions, the links on the Refresh page, the top bar's Refresh link, the `App.tsx` route and the tests, and checked the screen end to end
+against the CHUD-35 backend on a local database (refresh, update a record by hand, check it again).

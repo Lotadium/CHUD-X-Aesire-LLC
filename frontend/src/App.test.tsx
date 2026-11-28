@@ -81,6 +81,8 @@ test.each([
   ["#/entity/1", "Edit Entity", "Records"],
   ["#/contact/1", "Edit Contact", "Records"],
   ["#/review/website/3", "Review", "Review"],
+  ["#/refresh/latest", "Refresh results", "Refresh"],
+  ["#/activity/2", "Activity log", "Activity log"],
 ])("%s opens its screen and highlights the menu item it belongs to", async (href, heading, label) => {
   window.location.hash = href;
   render(<App />);
