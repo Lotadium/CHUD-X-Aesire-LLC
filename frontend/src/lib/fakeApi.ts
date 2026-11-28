@@ -1,4 +1,5 @@
 // AI use: listContactsForOrganization was written with Cline using Gemini 3.5 Flash Lite (AI assistant). Reviewed and tested by Irene Riva. See frontend/README.md → "AI assistance".
+// AI use: the record history part (getOrganizationHistory, CHUD-57) was written with help from Claude Code (Opus 5.5) (AI assistant). Reviewed and tested by Rachel. See frontend/README.md → "AI assistance".
 
 // FAKE API: stores data in memory so I can build the forms before the real API is ready.
 // When the real API is done, replace the inside of each function with a fetch() call.
@@ -105,7 +106,66 @@ export async function updateOrganization(id: string, changes: Partial<Organizati
   if (values(before) !== values(next)) next.updatedAt = now;
   next.verifiedAt = now;
   organizations[index] = next;
+  saveVersion(id, before, next);
   return { ...organizations[index] };
+}
+
+// ---------- Record history (CHUD-36 / CHUD-57) ----------
+
+// One saved version of a record, newest first, like GET /api/organizations/:id/history.
+// `field` is the database column name (website_url, is_flagged…), the same in the fake and real API.
+export type HistoryChange = { field: string; from: unknown; to: unknown };
+export type RecordVersion = {
+  version: number; // 1 = when the record was created
+  changedAt: string; // date as ISO text
+  changedByType: "USER" | "REFRESH";
+  changedBy: string; // username, or "" when unknown
+  changes: HistoryChange[]; // what this version changed (empty for version 1)
+};
+
+// Pretend record_history table: organization id -> its versions, oldest first.
+// Organization 1 has earlier versions; organization 2 has only the version it was created with.
+const organizationHistory: Record<string, RecordVersion[]> = {
+  "1": [
+    { version: 1, changedAt: "2026-10-05T16:30:00Z", changedByType: "USER", changedBy: "irene", changes: [] },
+    { version: 2, changedAt: "2026-10-12T21:05:00Z", changedByType: "USER", changedBy: "kathleen",
+      changes: [{ field: "name", from: "Sacramento Metropolitan Fire", to: "Sacramento Metro Fire" }] },
+    { version: 3, changedAt: "2026-10-20T19:00:00Z", changedByType: "REFRESH", changedBy: "irene",
+      changes: [
+        { field: "website_url", from: "", to: "https://metrofire.ca.gov/" },
+        { field: "website_status", from: "NOT_SEARCHED", to: "FOUND" },
+      ] },
+  ],
+  "2": [{ version: 1, changedAt: "2026-10-05T16:30:00Z", changedByType: "USER", changedBy: "irene", changes: [] }],
+};
+
+// Form field -> database column, so fake versions name fields like the real API does
+const COLUMNS: Partial<Record<keyof Organization, string>> = {
+  name: "name",
+  domainId: "domain_id",
+  websiteUrl: "website_url",
+  flagged: "is_flagged",
+  flagReason: "flag_reason",
+  websiteSource: "website_source",
+  websiteStatus: "website_status",
+};
+
+// Like the database trigger: a save that really changed something adds a version
+function saveVersion(id: string, before: Organization, after: Organization) {
+  const changes: HistoryChange[] = [];
+  for (const [key, field] of Object.entries(COLUMNS)) {
+    const k = key as keyof Organization;
+    if (before[k] !== after[k]) changes.push({ field: field!, from: before[k], to: after[k] });
+  }
+  if (changes.length === 0) return;
+  const versions = (organizationHistory[id] ??= []);
+  versions.push({ version: versions.length + 1, changedAt: after.updatedAt, changedByType: "USER", changedBy: "frontend", changes });
+}
+
+export async function getOrganizationHistory(id: string): Promise<RecordVersion[]> {
+  await delay();
+  if (!organizations.some((o) => o.id === id)) throw new Error("Organization not found.");
+  return [...(organizationHistory[id] ?? [])].reverse().map((v) => ({ ...v, changes: v.changes.map((c) => ({ ...c })) }));
 }
 
 // Flag (or unflag) a record as no longer valid. Nothing is removed.

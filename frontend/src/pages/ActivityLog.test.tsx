@@ -3,6 +3,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import App from "../App";
 import ActivityLog from "./ActivityLog";
 
 const orgs = [
@@ -107,4 +108,26 @@ test("shows an error with Try again when the server can't be reached", async () 
   activityResponse = () => json({ data: entries, total: entries.length });
   await user.click(screen.getByRole("button", { name: "Try again" }));
   expect(await screen.findAllByRole("row")).toHaveLength(4);
+});
+
+// CHUD-57: the record page's history panel links to #/activity/<id>, which opens the log already filtered.
+// Added with help from Claude Code (Opus 5.5) (AI assistant). Reviewed and tested by Rachel.
+test("can open already filtered to one entity", async () => {
+  render(<ActivityLog organizationId="1" />);
+  await screen.findAllByRole("row");
+  expect(activityUrls[0]).toContain("organization_id=1");
+  expect(await screen.findByRole("option", { name: "Test Fire District" })).toBeInTheDocument();
+  expect(screen.getByRole("combobox", { name: "Entity" })).toHaveValue("1");
+  expect(screen.getByRole("button", { name: "Clear filters" })).toBeInTheDocument();
+});
+
+test("opens filtered from the app at #/activity/<id>", async () => {
+  window.location.hash = "#/activity/2";
+  try {
+    render(<App />);
+    await screen.findAllByRole("row");
+    expect(activityUrls[0]).toContain("organization_id=2");
+  } finally {
+    window.location.hash = "";
+  }
 });

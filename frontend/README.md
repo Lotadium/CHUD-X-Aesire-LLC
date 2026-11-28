@@ -86,6 +86,13 @@ After Rachel's review, Claude Code also changed the real `listContactsForOrganiz
 contacts and use the position held at that organization, and wrote `realApi.contacts.test.ts`.
 I reviewed, ran, and tested all of it.
 
+On CHUD-57 (record history panel), I (Rachel) used two assistants. Cline with Gemini (3.5 Flash) wrote the real
+`getOrganizationHistory` in `realApi.ts` and its test in `realApi.test.ts`. Claude Code (Opus 5.5) wrote everything
+else: `RecordHistory.tsx`, `lib/recordHistory.ts`, `getOrganizationHistory` in `fakeApi.ts` and `api.ts`, the
+`#/activity/<id>` route in `App.tsx`, the `organizationId` prop on `ActivityLog.tsx`, and the tests
+(`RecordHistory.test.tsx`, `recordHistory.test.ts`, and new tests in `RecordPage.test.tsx` and `ActivityLog.test.tsx`).
+I reviewed, ran, and tested all of it.
+
 ## Record page (CHUD-64)
 
 `#/records/<id>` opens one organization (click an entity name in the records list, or the **Record page**
@@ -97,10 +104,27 @@ tab). It is read-only:
   contact form (`#/contact/<id>`)
 - **Edit** opens the entity form (`#/entity/<id>`); **Refresh** runs a refresh for just this record
   (`startRefresh([id])`, then `nextRefreshBatch` until it is done) and shows the result
-- an empty **Record history** card where the history panel goes (CHUD-57)
+- the **Record history** panel (CHUD-57, below)
 
 Contacts come from `listContactsForOrganization(orgId)` in `lib/api.ts` (fake data, or
 `GET /api/people?organization_id=<id>` with `VITE_USE_REAL_API=true`).
+
+### Record history panel (CHUD-57)
+
+The last card on the record page (`components/RecordHistory.tsx`, charter 2.3 c) shows:
+
+- when the record was **last updated**
+- every saved version, newest first (the newest is marked **Current**): the date, who changed it
+  (a username, or **Refresh** for the data refresh) and what changed ("Website: Not Found → https://…").
+  Version 1 reads "Record created"
+- **No earlier versions** when the record has only the version it was created with
+- **Open activity log for this record**, which opens `#/activity/<id>`: the activity log with the
+  Entity filter already set to this organization
+
+Versions come from `getOrganizationHistory(id)` in `lib/api.ts`: fake sample data (organization 1 has
+versions, organization 2 has none; saving the entity form adds one), or `GET /api/organizations/:id/history`
+(CHUD-36) with `VITE_USE_REAL_API=true`. The panel shows the organization's own versions; contact changes
+are on each contact's history and in the activity log. The wording of each change is in `lib/recordHistory.ts`.
 
 ## Website on the entity page (CHUD-31)
 

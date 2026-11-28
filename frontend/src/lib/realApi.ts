@@ -1,3 +1,4 @@
+// AI use: getOrganizationHistory (CHUD-57) was written with Cline using Gemini 3.5 Flash (AI assistant). Reviewed and tested by Rachel. See frontend/README.md → "AI assistance".
 // REAL API: talks to Irene's backend (CHUD-13, see backend/README.md).
 // It exposes the exact same functions as fakeApi.ts, so the forms don't change.
 // The differences between the form and the API are handled here:
@@ -9,7 +10,7 @@
 //   - no deleting:  per the charter (2.3 f.iv) records are flagged, never removed.
 //                   Flags use `is_flagged` + `flag_reason` columns on organization and
 //                   person, which the database (CHUD-10) and API (CHUD-13) still need to add.
-import type { Contact, Flag, Organization, UpdateOptions, WebsiteInfo, WebsiteStatusValue } from "./fakeApi";
+import type { Contact, Flag, Organization, RecordVersion, UpdateOptions, WebsiteInfo, WebsiteStatusValue } from "./fakeApi";
 
 // Where the API lives. Set VITE_API_URL in .env.local; defaults to Irene's local server.
 const BASE_URL: string = import.meta.env.VITE_API_URL ?? "http://localhost:8787/api";
@@ -161,6 +162,27 @@ export async function setOrganizationFlag(id: string, flagged: boolean, reason =
 export async function listOrganizations(): Promise<{ id: string; name: string }[]> {
   const res = await request<{ data: ApiOrganization[] }>("/organizations?limit=200");
   return res.data.map((o) => ({ id: String(o.organization_id), name: o.name }));
+}
+
+// ---------- record history (CHUD-36 endpoint, used by the history panel CHUD-57) ----------
+
+type ApiHistoryEntry = {
+  version: number;
+  changed_at: string;
+  changed_by_type: "USER" | "REFRESH";
+  changed_by: string | null;
+  changes: { field: string; from: unknown; to: unknown }[];
+};
+
+export async function getOrganizationHistory(id: string): Promise<RecordVersion[]> {
+  const res = await request<{ data: ApiHistoryEntry[] }>(`/organizations/${encodeURIComponent(id)}/history`);
+  return res.data.map(({ version, changed_at, changed_by_type, changed_by, changes }) => ({
+    version,
+    changedAt: changed_at,
+    changedByType: changed_by_type,
+    changedBy: nullToBlank(changed_by),
+    changes,
+  }));
 }
 
 // ---------- contacts (person + first position + first email) ----------
